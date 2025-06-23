@@ -1,11 +1,11 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import streamlit as st
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 import ccxt
+import plotly.express as px
 
 # === KuCoin Configuration ===
 exchange = ccxt.kucoin()
@@ -86,12 +86,15 @@ class HybridNeuralNetwork:
             mean_err = np.mean(self.error_history)
             std_err = np.std(self.error_history)
             if mean_err > 0.05 + std_err:
+                st.warning("*** Drift detected: Adapting threshold.")
                 self.gen_threshold *= 1.1
             self.error_history = []
 
-# === Main Routine ===
-st.title("Hybrid DNN-EQIC BTC/USDT Predictor - Streamlit Dashboard")
-df = get_kucoin_data()
+# === Streamlit App ===
+st.title("Hybrid DNN-EQIC BTC/USDT Predictor with 3D PCA")
+
+with st.spinner('Fetching KuCoin data...'):
+    df = get_kucoin_data()
 features = ['close', 'RSI', 'MA20', 'ATR']
 imputer = SimpleImputer(strategy='mean')
 data_imputed = imputer.fit_transform(df[features])
@@ -111,9 +114,12 @@ for iteration, sample in enumerate(data_scaled):
     mae_list.append(mae)
     network.error_history.append(error)
     rehearsal_data.append(sample)
+
     if iteration % 20 == 0:
+        st.write(f"Iteration {iteration}: Avg MSE={np.mean(mse_list):.5f}, Avg MAE={np.mean(mae_list):.5f}, Units={len(network.units)}")
         network.adapt_threshold()
 
+# === Real 7-Step Prediction ===
 last_input = data_scaled[-1]
 predictions = [network.predict_next(last_input) for _ in range(7)]
 pred_close_scaled = [p[0] for p in predictions]
@@ -121,17 +127,15 @@ full_features = np.tile(last_input, (7, 1))
 full_features[:, 0] = pred_close_scaled
 pred_close = scaler.inverse_transform(full_features)[:, 0]
 
-# === Streamlit Outputs ===
-st.write("### Final Results")
-st.write(f"Prediction MSE: {np.mean(mse_list):.5f}")
-st.write(f"Prediction MAE: {np.mean(mae_list):.5f}")
-st.write("Next 7 predicted Close prices:", pred_close)
+st.subheader("Next 7 Predicted Close Prices")
+st.write(pred_close)
 
 # === PCA 3D Visualization ===
 pca = PCA(n_components=3)
 data_pca = pca.fit_transform(data_scaled)
-fig = plt.figure(figsize=(8, 6))
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(data_pca[:, 0], data_pca[:, 1], data_pca[:, 2], c='blue', label='Data')
-ax.set_title("PCA 3D Visualization")
-st.pyplot(fig)
+fig_pca = px.scatter_3d(x=data_pca[:,0], y=data_pca[:,1], z=data_pca[:,2], color_discrete_sequence=['blue'])
+st.plotly_chart(fig_pca)
+
+st.subheader("Final Metrics")
+st.write(f"Prediction MSE: {np.mean(mse_list):.5f}")
+st.write(f"Prediction MAE: {np.mean(mae_list):.5f}")
