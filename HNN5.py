@@ -11,7 +11,7 @@ import time
 # ===== KuCoin Configuration =====
 exchange = ccxt.kucoin()
 symbol = 'BTC/USDT'
-timeframe = '5m'
+timeframe = '1m'
 data_limit = 200
 
 # ===== Indicators =====
@@ -126,6 +126,7 @@ while True:
 
     pca = PCA(n_components=3)
     data_pca = pca.fit_transform(data_scaled)
+    plt.close('all')  # Close previous figures to prevent warning
     fig = plt.figure(figsize=(6, 4))
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(data_pca[:, 0], data_pca[:, 1], data_pca[:, 2], c='blue', label='Data')
