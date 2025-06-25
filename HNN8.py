@@ -98,11 +98,13 @@ class HybridNeuralNetwork:
 st.set_page_config(page_title="Hybrid DNN-EQIC BTC Predictor", layout="wide")
 st.title("Real-Time Hybrid DNN-EQIC BTC/USDT Predictor")
 placeholder = st.empty()
+chart_placeholder = st.empty()
+error_chart_placeholder = st.empty()
+pca_placeholder = st.empty()
 
 mse_list, mae_list = [], []
 network = HybridNeuralNetwork()
 
-# Forward validation placeholders
 prev_prediction = None
 prev_timestamp = None
 
@@ -120,7 +122,7 @@ while True:
     for sample in data_scaled:
         unit, similarity = network.process_input(sample)
         prediction = network.predict_next(sample)
-        error = np.mean((sample - prediction)**2)
+        error = np.mean((sample - prediction) ** 2)
         mae = np.mean(np.abs(sample - prediction))
         mse_list.append(error)
         mae_list.append(mae)
@@ -137,7 +139,6 @@ while True:
     predicted_close = scaler.inverse_transform([reconstructed])[0][0]
     actual_close = df['close'].iloc[-1]
 
-    now = datetime.now().strftime("%H:%M:%S")
     if prev_prediction is not None and prev_timestamp != df.index[-1]:
         forward_error = abs(prev_prediction - actual_close)
         prediction_log.append({
@@ -151,19 +152,17 @@ while True:
     prev_prediction = predicted_close
     prev_timestamp = df.index[-1]
 
-    # === PCA Visualization ===
+    # PCA plot
     pca = PCA(n_components=3)
     data_pca = pca.fit_transform(data_scaled)
-    plt.close('all')
     fig_pca = plt.figure(figsize=(6, 4))
     ax = fig_pca.add_subplot(111, projection='3d')
-    ax.scatter(data_pca[:, 0], data_pca[:, 1], data_pca[:, 2], c='blue', label='Live Data')
+    ax.scatter(data_pca[:, 0], data_pca[:, 1], data_pca[:, 2], c='blue')
     ax.set_title("PCA 3D Visualization")
     ax.set_xlabel("PC1")
     ax.set_ylabel("PC2")
     ax.set_zlabel("PC3")
 
-    # === Streamlit Output ===
     with placeholder.container():
         st.markdown(f"### Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         col1, col2, col3 = st.columns(3)
@@ -173,29 +172,32 @@ while True:
         st.metric("Actual Last Close", f"{actual_close:.2f}")
         st.metric("Predicted Next Close", f"{predicted_close:.2f}")
 
-    if prediction_log:
-    	log_df = pd.DataFrame(prediction_log)
+        if prediction_log:
+            log_df = pd.DataFrame(prediction_log)
 
-    	# Create a unified matplotlib chart
-    	plt.figure(figsize=(10, 4))
-    	plt.plot(log_df['Time'], log_df['Actual'], label='Actual Close', marker='o', color='blue')
-    	plt.plot(log_df['Time'], log_df['Predicted'], label='Predicted Close', marker='x', color='orange')
-    	plt.xticks(rotation=45)
-    	plt.xlabel("Time")
-    	plt.ylabel("Price (USDT)")
-    	plt.title("Actual vs Predicted Close Price")
-    	plt.legend()
-    	plt.grid(True)
-    	st.pyplot(plt.gcf())  # Show matplotlib figure
+            # Combined chart — only updated
+            fig, ax1 = plt.subplots(figsize=(10, 4))
+            ax1.plot(log_df['Time'], log_df['Actual'], label='Actual Close', color='blue', marker='o')
+            ax1.plot(log_df['Time'], log_df['Predicted'], label='Predicted Close', color='orange', marker='x')
+            ax1.set_xlabel("Time")
+            ax1.set_ylabel("Price (USDT)")
+            ax1.set_title("Actual vs Predicted Close Price")
+            ax1.tick_params(axis='x', rotation=45)
+            ax1.legend()
+            ax1.grid(True)
+            chart_placeholder.pyplot(fig)
 
-    	# Plot prediction error
-    	plt.figure(figsize=(10, 2.5))
-    	plt.plot(log_df['Time'], log_df['Error'], label='Absolute Prediction Error', color='red', marker='.')
-    	plt.xticks(rotation=45)
-    	plt.xlabel("Time")
-    	plt.ylabel("Error")
-    	plt.title("Prediction Error Over Time")
-    	plt.grid(True)
-    	st.pyplot(plt.gcf())
+            # Error chart update
+            fig2, ax2 = plt.subplots(figsize=(10, 2.5))
+            ax2.plot(log_df['Time'], log_df['Error'], label='Prediction Error', color='red', marker='.')
+            ax2.set_xlabel("Time")
+            ax2.set_ylabel("Error")
+            ax2.set_title("Prediction Error Over Time")
+            ax2.tick_params(axis='x', rotation=45)
+            ax2.grid(True)
+            error_chart_placeholder.pyplot(fig2)
+
+        # PCA 3D update
+        pca_placeholder.pyplot(fig_pca)
 
     time.sleep(60)
