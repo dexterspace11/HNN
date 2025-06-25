@@ -173,11 +173,29 @@ while True:
         st.metric("Actual Last Close", f"{actual_close:.2f}")
         st.metric("Predicted Next Close", f"{predicted_close:.2f}")
 
-        if prediction_log:
-            log_df = pd.DataFrame(prediction_log)
-            st.line_chart(log_df.set_index('Time')[['Predicted', 'Actual']])  # ONE combined chart
-            st.line_chart(log_df.set_index('Time')[['Error']])
+    if prediction_log:
+    	log_df = pd.DataFrame(prediction_log)
 
-        st.pyplot(fig_pca)
+    	# Create a unified matplotlib chart
+    	plt.figure(figsize=(10, 4))
+    	plt.plot(log_df['Time'], log_df['Actual'], label='Actual Close', marker='o', color='blue')
+    	plt.plot(log_df['Time'], log_df['Predicted'], label='Predicted Close', marker='x', color='orange')
+    	plt.xticks(rotation=45)
+    	plt.xlabel("Time")
+    	plt.ylabel("Price (USDT)")
+    	plt.title("Actual vs Predicted Close Price")
+    	plt.legend()
+    	plt.grid(True)
+    	st.pyplot(plt.gcf())  # Show matplotlib figure
+
+    	# Plot prediction error
+    	plt.figure(figsize=(10, 2.5))
+    	plt.plot(log_df['Time'], log_df['Error'], label='Absolute Prediction Error', color='red', marker='.')
+    	plt.xticks(rotation=45)
+    	plt.xlabel("Time")
+    	plt.ylabel("Error")
+    	plt.title("Prediction Error Over Time")
+    	plt.grid(True)
+    	st.pyplot(plt.gcf())
 
     time.sleep(60)
