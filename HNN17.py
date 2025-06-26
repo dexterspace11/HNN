@@ -13,7 +13,7 @@ from datetime import datetime
 # KuCoin Configuration
 exchange = ccxt.kucoin()
 symbol = 'BTC/USDT'
-timeframe = '1m'
+timeframe = '5m'
 data_limit = 200
 
 prediction_log = []
