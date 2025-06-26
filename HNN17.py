@@ -87,16 +87,23 @@ class HybridNeuralUnit:
         self.reward += -error * 0.1
         
     def hebbian_learn(self, other_unit, strength, spike_timing=None):
-        if spike_timing is not None:
-            timing_diff = spike_timing['pre'] - spike_timing['post']
-            stdp_factor = np.exp(-abs(timing_diff) / 20.0)
-            strength *= stdp_factor
+        if spike_timing is None:
+            stdp_factor = 1.0  # Default factor when no timing info available
+        else:
+            # Ensure both pre and post times are initialized
+            pre_time = spike_timing.get('pre', datetime.now())
+            post_time = spike_timing.get('post', datetime.now())
             
+            # Calculate timing difference
+            timing_diff = (pre_time - post_time).total_seconds()
+            stdp_factor = np.exp(-abs(timing_diff) / 20.0)
+            
+        # Apply STDP factor to learning strength
+        strength *= stdp_factor
+        
+        # Update connections
         self.connections[other_unit] = self.connections.get(other_unit, 0.0) + \
                                      strength * self.learning_rate * self.emotional_weight
-        
-    def update_spike_time(self):
-        self.last_spike_time = datetime.now()
 
 class HybridNeuralNetwork:
     def __init__(self):
@@ -145,17 +152,23 @@ class HybridNeuralNetwork:
         best_unit.emotional_weight = emotional_tag
         best_unit.age = 0
         best_unit.usage_count += 1
+        
+        # Update spike time for STDP
         best_unit.update_spike_time()
         
         if best_similarity < self.gen_threshold:
             return self.generate_unit(input_data), 0.0
             
         # Enhanced learning with STDP and attention
-        spike_timing = {'pre': datetime.now(), 'post': None}
+        spike_timing = {
+            'pre': best_unit.last_spike_time,
+            'post': datetime.now()
+        }
+        
         for unit, similarity in similarities:
             if unit != best_unit:
                 attention_score = unit.get_attention_score(input_data)
-                best_unit.hebbian_learn(unit, similarity * attention_score, spike_timing)
+                unit.hebbian_learn(best_unit, similarity * attention_score, spike_timing)
             unit.age += 1
             
         return best_unit, best_similarity
