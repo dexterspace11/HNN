@@ -212,7 +212,7 @@ def get_kucoin_data():
 # ---------------- Streamlit Real-time Dashboard -------------------
 exchange = ccxt.kucoin()
 symbol = 'BTC/USDT'
-timeframe = '1m'
+timeframe = '5m'
 data_limit = 200
 
 st.set_page_config(page_title="Hybrid DNN-EQIC BTC Predictor", layout="wide")
