@@ -216,7 +216,7 @@ def get_kucoin_data():
 
 exchange = ccxt.kucoin()
 symbol = 'BTC/USDT'
-timeframe = '5m'
+timeframe = '1m'
 data_limit = 200
 
 st.set_page_config(page_title="Hybrid DNN-EQIC BTC Predictor", layout="wide")
