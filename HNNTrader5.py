@@ -1,4 +1,4 @@
-# ---------------- Updated Hybrid DNN-EQIC Streamlit App (Fixed Broadcast Error) -------------------
+# ---------------- Fixed Hybrid DNN-EQIC Streamlit App -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -228,14 +228,16 @@ while True:
 
     predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
     reconstructed = np.copy(data_scaled[-1])
-    reconstructed[0] = predicted_scaled[0]
+    reconstructed[0] = predicted_scaled[0] if len(predicted_scaled) > 0 else data_scaled[-1][0]
     predicted_close = scaler.inverse_transform([reconstructed])[0][0]
 
     buy_price, sell_price = predicted_close, predicted_close
     if network.units:
-        # Pad each unit's position to shape (n_features,) to match scaler expectations
         n_features = data_scaled.shape[1]
-        padded_positions = np.array([np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant') for unit in network.units])
+        padded_positions = np.array([
+            np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant')
+            for unit in network.units
+        ])
         closes = scaler.inverse_transform(padded_positions)[:, 0]
         buy_price = closes.min()
         sell_price = closes.max()
