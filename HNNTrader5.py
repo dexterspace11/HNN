@@ -1,4 +1,4 @@
-# ---------------- Final Hybrid DNN-EQIC Streamlit App (Error-Free and Optimized) -------------------
+# ---------------- Full Updated Hybrid DNN-EQIC Streamlit App (Broadcast Fix Applied) -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -177,7 +177,7 @@ def get_kucoin_data():
     df.dropna(inplace=True)
     return df
 
-# ---------------- Pattern Recognition Metrics -------------------
+# ---------------- Pattern Recognition Metrics (Updated) -------------------
 class PatternRecognitionMetrics:
     def __init__(self, network):
         self.network = network
@@ -186,8 +186,12 @@ class PatternRecognitionMetrics:
 
     def verify_pattern_learning(self, test_data):
         patterns = [test_data[['close', 'RSI', 'MA20', 'ATR']].iloc[i].values for i in range(len(test_data) - 1)]
-        recognized = sum(self.network.quantum_inspired_distance(p) > 0.6 for p in patterns)
-        return recognized / len(patterns) if patterns else 0
+        padded_patterns = [
+            np.pad(p, (0, 20 - len(p)), mode='constant') if len(p) < 20 else p
+            for p in patterns
+        ]
+        recognized = sum(self.network.quantum_inspired_distance(p) > 0.6 for p in padded_patterns)
+        return recognized / len(padded_patterns) if padded_patterns else 0
 
     def evaluate_signal_reliability(self, prediction_log):
         signals = [{'buy': p['Buy'], 'sell': p['Sell'], 'predicted': p['Predicted'], 'actual': p['Actual']} for p in prediction_log]
@@ -231,11 +235,16 @@ while True:
     reconstructed[0] = predicted_scaled[0]
     predicted_close = scaler.inverse_transform([reconstructed])[0][0]
 
-    buy_price = sell_price = predicted_close
+    buy_price, sell_price = predicted_close, predicted_close
     if network.units:
-        closes = [unit.position[0] if len(unit.position) > 0 else 0.0 for unit in network.units]
-        buy_price = min(closes)
-        sell_price = max(closes)
+        n_features = data_scaled.shape[1]
+        padded_positions = np.array([
+            np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant')
+            for unit in network.units
+        ])
+        closes = scaler.inverse_transform(padded_positions)[:, 0]
+        buy_price = closes.min()
+        sell_price = closes.max()
 
     uncertainty = network.estimate_uncertainty(similarity)
     ci = uncertainty * actual_close
