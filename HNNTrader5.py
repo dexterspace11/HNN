@@ -1,4 +1,4 @@
-# ---------------- Updated Hybrid DNN-EQIC Streamlit App -------------------
+# ---------------- Updated Hybrid DNN-EQIC Streamlit App (Fixed Broadcast Error) -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -61,7 +61,7 @@ class HybridNeuralUnit:
     def quantum_inspired_distance(self, input_pattern):
         diff = np.abs(input_pattern - self.position)
         dist = np.sqrt(np.sum(diff ** 2))
-        decay = np.exp(-self.age / 100.0)  # Age decay factor
+        decay = np.exp(-self.age / 100.0)
         return (np.exp(-2.0 * dist) + 0.5 / (1 + 0.9 * dist)) * decay
 
     def get_attention_score(self, input_pattern):
@@ -152,7 +152,7 @@ class HybridNeuralNetwork:
         similarities = [unit.quantum_inspired_distance(pattern) for unit in self.units]
         return max(similarities)
 
-# ---------------- Data & Indicators -------------------
+# ---------------- Indicators & Data -------------------
 def calculate_rsi(prices, period=14):
     delta = prices.diff()
     gain = delta.where(delta > 0, 0)
@@ -185,47 +185,23 @@ class PatternRecognitionMetrics:
         self.signal_history = []
 
     def verify_pattern_learning(self, test_data):
-        test_patterns = self._extract_patterns(test_data)
-        recognition_rate = self._calculate_recognition_rate(test_patterns)
-        self.pattern_history.append({'timestamp': datetime.now(), 'rate': recognition_rate})
-        return recognition_rate
-
-    def evaluate_signal_reliability(self, prediction_log):
-        signal_patterns = self._extract_signal_patterns(prediction_log)
-        consistency = self._calculate_signal_consistency(signal_patterns)
-        self.signal_history.append({'timestamp': datetime.now(), 'score': consistency})
-        return consistency
-
-    def _extract_patterns(self, data):
-        features = ['close', 'RSI', 'MA20', 'ATR']
-        return [data[features].iloc[i].values for i in range(len(data) - 1)]
-
-    def _calculate_recognition_rate(self, patterns):
-        recognized = 0
-        for pattern in patterns:
-            similarity = self.network.quantum_inspired_distance(pattern)
-            if similarity > 0.6:  # Adjusted threshold
-                recognized += 1
+        patterns = [test_data[['close', 'RSI', 'MA20', 'ATR']].iloc[i].values for i in range(len(test_data) - 1)]
+        recognized = sum(self.network.quantum_inspired_distance(p) > 0.6 for p in patterns)
         return recognized / len(patterns) if patterns else 0
 
-    def _extract_signal_patterns(self, prediction_log):
-        return [{'buy': p['Buy'], 'sell': p['Sell'], 'predicted': p['Predicted'], 'actual': p['Actual']} for p in prediction_log]
-
-    def _calculate_signal_consistency(self, signals):
-        consistent = 0
-        for i in range(len(signals) - 1):
-            if (signals[i]['buy'] - signals[i]['predicted']) * (signals[i+1]['buy'] - signals[i+1]['predicted']) > 0:
-                consistent += 1
+    def evaluate_signal_reliability(self, prediction_log):
+        signals = [{'buy': p['Buy'], 'sell': p['Sell'], 'predicted': p['Predicted'], 'actual': p['Actual']} for p in prediction_log]
+        consistent = sum((s1['buy'] - s1['predicted']) * (s2['buy'] - s2['predicted']) > 0 for s1, s2 in zip(signals[:-1], signals[1:]))
         return consistent / len(signals) if signals else 0
 
-# ---------------- Streamlit Dashboard -------------------
+# ---------------- Streamlit UI -------------------
 exchange = ccxt.kucoin()
 symbol = 'BTC/USDT'
 timeframe = '1m'
 data_limit = 200
 
 st.set_page_config(page_title="Hybrid DNN-EQIC Predictor", layout="wide")
-st.title("Hybrid DNN-EQIC BTC/USDT Predictor with Pattern Learning & Signal Metrics")
+st.title("Hybrid DNN-EQIC BTC/USDT Predictor with Buy/Sell + Error + Metrics")
 
 placeholder = st.empty()
 chart_placeholder = st.empty()
@@ -245,21 +221,24 @@ while True:
     data_scaled = scaler.fit_transform(data_imputed)
 
     smoothing_factor = 0.3 if df['ATR'].iloc[-1] > df['close'].std() * 0.01 else 0.7
-    input_window = data_scaled[-5:].flatten()  # use past 5 steps
+    input_window = data_scaled[-5:].flatten()
 
     actual_time = df.index[-1]
     actual_close = df['close'].iloc[-1]
 
     predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
     reconstructed = np.copy(data_scaled[-1])
-    reconstructed[0] = predicted_scaled[0]  # replace 'close' only
+    reconstructed[0] = predicted_scaled[0]
     predicted_close = scaler.inverse_transform([reconstructed])[0][0]
 
-    all_positions = np.array([unit.position for unit in network.units])
-    buy_price = sell_price = predicted_close
-    if len(all_positions) > 0:
-        closes = scaler.inverse_transform(all_positions)[:, 0]
-        buy_price, sell_price = closes.min(), closes.max()
+    buy_price, sell_price = predicted_close, predicted_close
+    if network.units:
+        # Pad each unit's position to shape (n_features,) to match scaler expectations
+        n_features = data_scaled.shape[1]
+        padded_positions = np.array([np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant') for unit in network.units])
+        closes = scaler.inverse_transform(padded_positions)[:, 0]
+        buy_price = closes.min()
+        sell_price = closes.max()
 
     uncertainty = network.estimate_uncertainty(similarity)
     ci = uncertainty * actual_close
@@ -284,7 +263,6 @@ while True:
         col3.metric("Sell at Peak", f"{sell_price:.2f}")
 
         log_df = pd.DataFrame(prediction_log[-50:])
-
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(log_df['Time'], log_df['Actual'], label='Actual', color='blue', marker='o')
         ax.plot(log_df['Time'], log_df['Predicted'], label='Predicted', color='orange', marker='x')
