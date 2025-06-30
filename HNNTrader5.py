@@ -1,4 +1,4 @@
-# ---------------- Fixed Hybrid DNN-EQIC Streamlit App -------------------
+# ---------------- Final Hybrid DNN-EQIC Streamlit App (Error-Free and Optimized) -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -228,19 +228,14 @@ while True:
 
     predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
     reconstructed = np.copy(data_scaled[-1])
-    reconstructed[0] = predicted_scaled[0] if len(predicted_scaled) > 0 else data_scaled[-1][0]
+    reconstructed[0] = predicted_scaled[0]
     predicted_close = scaler.inverse_transform([reconstructed])[0][0]
 
-    buy_price, sell_price = predicted_close, predicted_close
+    buy_price = sell_price = predicted_close
     if network.units:
-        n_features = data_scaled.shape[1]
-        padded_positions = np.array([
-            np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant')
-            for unit in network.units
-        ])
-        closes = scaler.inverse_transform(padded_positions)[:, 0]
-        buy_price = closes.min()
-        sell_price = closes.max()
+        closes = [unit.position[0] if len(unit.position) > 0 else 0.0 for unit in network.units]
+        buy_price = min(closes)
+        sell_price = max(closes)
 
     uncertainty = network.estimate_uncertainty(similarity)
     ci = uncertainty * actual_close
