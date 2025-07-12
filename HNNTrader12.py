@@ -1,4 +1,4 @@
-# ---------------- Updated Dream-Based Streamlit Neural Trading System with Dynamic Charts -------------------
+# ---------------- Updated Dream-Based Streamlit Neural Trading System -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -49,6 +49,12 @@ class DreamNet:
         for unit in self.units:
             dream_input = unit.pattern + np.random.normal(0, 0.05, size=len(unit.pattern))
             self.process(dream_input)
+
+    def reinforce_failure(self, failed_pattern):
+        for unit in self.units:
+            sim = unit.similarity(failed_pattern)
+            if sim > 0.6:
+                unit.reinforce(-0.5)
 
     def get_stats(self):
         return {
@@ -131,32 +137,79 @@ while True:
 
     # Simulate trade closes
     for trade in open_trades:
-        if trade['Status'] == 'Open' and actual_close >= trade['Sell']:
-            trade['Status'] = 'Closed'
-            trade['CloseTime'] = datetime.now()
-            capital_usdt += trade['Sell']
-            executed_trades.append(trade)
+        if trade['Status'] == 'Open':
+            if actual_close >= trade['Sell']:
+                trade['Status'] = 'Closed'
+                trade['CloseTime'] = datetime.now()
+                capital_usdt += trade['Sell']
+                executed_trades.append(trade)
+            elif actual_close < trade['Buy'] * 0.985:  # 1.5% stop loss
+                trade['Status'] = 'Closed'
+                trade['CloseTime'] = datetime.now()
+                trade['Sell'] = actual_close
+                net.reinforce_failure(current_input)
+                capital_usdt += actual_close
+                executed_trades.append(trade)
+
     open_trades = [t for t in open_trades if t['Status'] == 'Open']
 
     net.dream_learn()
 
     stats = net.get_stats()
-    win_trades = executed_trades
+    win_trades = [t for t in executed_trades if t['Sell'] > t['Buy']]
     total_trades = len(executed_trades)
     win_ratio = len(win_trades) / total_trades if total_trades > 0 else 0
-    returns = [(t['Sell'] - t['Buy']) / t['Buy'] for t in win_trades]
+    returns = [(t['Sell'] - t['Buy']) / t['Buy'] for t in executed_trades]
     sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-6) if returns else 0
     cumulative_profit = capital_usdt - 1000
 
     with placeholder.container():
         st.metric("🧠 Signal Score", f"{signal_score:.4f}")
         st.metric("📈 Predicted Close", f"{predicted_close:.2f}")
-        st.metric("📉 Actual Close", f"{actual_close:.2f}")
         st.metric("💰 Capital", f"{capital_usdt:.2f} USDT")
         st.metric("📊 Win Ratio", f"{win_ratio:.2%}")
         st.metric("📈 Sharpe Ratio", f"{sharpe_ratio:.2f}")
         st.metric("📈 Cumulative Profit", f"{cumulative_profit:.2f} USDT")
 
     with chart_placeholder.container():
-        st.subheader("📊 Dynamic Prediction vs Actual Close")
-        hist_df = pd.DataFrame(prediction_history[
+        st.subheader("Prediction vs Actual Close")
+        hist_df = pd.DataFrame(prediction_history[-100:])
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(hist_df['Time'], hist_df['Actual'], label='Actual', marker='o')
+        ax.plot(hist_df['Time'], hist_df['Predicted'], label='Predicted', marker='x')
+        ax.fill_between(
+            hist_df['Time'],
+            hist_df['Predicted'] - hist_df['Error'],
+            hist_df['Predicted'] + hist_df['Error'],
+            color='orange',
+            alpha=0.2
+        )
+        ax.set_title("Prediction Accuracy")
+        ax.legend()
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+        plt.close(fig)
+
+        st.subheader("Executed Trades")
+        if executed_trades:
+            log_df = pd.DataFrame(executed_trades)
+            log_df['Profit'] = log_df['Sell'] - log_df['Buy']
+            st.dataframe(log_df[['Time', 'Buy', 'Sell', 'Profit', 'Status', 'CloseTime']].tail(10))
+        else:
+            st.write("No trades executed yet.")
+
+        st.subheader("Open Trades")
+        if open_trades:
+            open_df = pd.DataFrame(open_trades)
+            st.dataframe(open_df[['Time', 'Buy', 'Sell', 'Status']].tail(10))
+        else:
+            st.write("No open trades.")
+
+    with stats_placeholder.container():
+        st.subheader("Neural Network Growth")
+        st.metric("Neural Units", stats['unit_count'])
+        st.metric("Avg Reward", f"{stats['avg_reward']:.4f}")
+        st.metric("Avg Usage", f"{stats['avg_usage']:.2f}")
+
+    time.sleep(60)
+
