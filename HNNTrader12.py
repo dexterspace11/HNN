@@ -17,7 +17,7 @@ class DreamUnit:
 
     def similarity(self, new_pattern):
         dist = np.linalg.norm(np.array(self.pattern) - np.array(new_pattern))
-        return np.exp(-dist)  # Gaussian kernel
+        return np.exp(-dist)
 
     def reinforce(self, reward):
         self.reward += reward
@@ -38,12 +38,12 @@ class DreamNet:
         similarities = [unit.similarity(input_pattern) for unit in self.units]
         best_index = np.argmax(similarities)
         best_unit = self.units[best_index]
-        best_unit.reinforce(1 - similarities[best_index])  # Lower error = higher reward
+        best_unit.reinforce(1 - similarities[best_index])
 
         if similarities[best_index] < 0.6:
             self.units.append(DreamUnit(input_pattern))
 
-        return best_unit.reward / (best_unit.usage + 1e-5)  # signal score
+        return best_unit.reward / (best_unit.usage + 1e-5)
 
     def dream_learn(self):
         for unit in self.units:
@@ -95,6 +95,7 @@ capital_usdt = 1000
 trade_amount = 100
 executed_trades = []
 prediction_history = []
+open_trades = []
 
 placeholder = st.empty()
 chart_placeholder = st.empty()
@@ -121,7 +122,7 @@ while True:
     if buy_signal:
         capital_usdt -= trade_amount
         sell_price = predicted_close * 1.01
-        executed_trades.append({
+        open_trades.append({
             'Time': datetime.now(),
             'Buy': predicted_close,
             'Sell': sell_price,
@@ -129,15 +130,18 @@ while True:
         })
 
     # Simulate trade closes
-    for trade in executed_trades:
+    for trade in open_trades:
         if trade['Status'] == 'Open' and actual_close >= trade['Sell']:
             trade['Status'] = 'Closed'
+            trade['CloseTime'] = datetime.now()
             capital_usdt += trade['Sell']
+            executed_trades.append(trade)
+    open_trades = [t for t in open_trades if t['Status'] == 'Open']
 
     net.dream_learn()
 
     stats = net.get_stats()
-    win_trades = [t for t in executed_trades if t['Status'] == 'Closed']
+    win_trades = executed_trades
     total_trades = len(executed_trades)
     win_ratio = len(win_trades) / total_trades if total_trades > 0 else 0
     returns = [(t['Sell'] - t['Buy']) / t['Buy'] for t in win_trades]
@@ -169,7 +173,8 @@ while True:
         st.subheader("Executed Trades")
         if executed_trades:
             log_df = pd.DataFrame(executed_trades)
-            st.dataframe(log_df.tail(10))
+            log_df['Profit'] = log_df['Sell'] - log_df['Buy']
+            st.dataframe(log_df[['Time', 'Buy', 'Sell', 'Profit', 'Status', 'CloseTime']].tail(10))
         else:
             st.write("No trades executed yet.")
 
@@ -180,3 +185,4 @@ while True:
         st.metric("Avg Usage", f"{stats['avg_usage']:.2f}")
 
     time.sleep(60)
+
