@@ -92,6 +92,8 @@ class NeuralUnit:
         self.connections[other_unit] += delta_w
         self.connections[other_unit] = min(max(self.connections[other_unit], 0), 1)
 
+# ----------- Neural Ecosystem -----------
+
 class NeuralEcosystem:
     def __init__(self, activity_dim, growth_threshold=0.6, prune_threshold=0.2):
         self.units = []
@@ -137,30 +139,27 @@ class NeuralEcosystem:
         # Remove units with low usage or old age
         self.units = [u for u in self.units if u.usage > 2 or u.age < 100]
 
-    def cluster_units(self):
-        # Cluster based on positions to identify groups for hierarchy
+    def cluster_units(self, eps=0.5, min_samples=2):
+        # Cluster based on positions to identify groups
         if len(self.units) < 2:
-            return []
+            return {}
         positions = np.array([u.position for u in self.units])
-        clustering = DBSCAN(eps=0.5, min_samples=2).fit(positions)
+        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(positions)
         labels = clustering.labels_
         clusters = {}
         for u, lbl in zip(self.units, labels):
             clusters.setdefault(lbl, []).append(u)
         return clusters
 
-    def form_hierarchy(self):
-        # For each cluster, create a higher-level unit
-        clusters = self.cluster_units()
+    def form_hierarchy(self, eps=0.5, min_samples=2):
+        clusters = self.cluster_units(eps, min_samples)
         hierarchy_units = []
         for lbl, units in clusters.items():
             if lbl == -1:
                 continue  # noise
-            # Average position
             centroid = np.mean([u.position for u in units], axis=0)
-            # Create higher-level unit
             hl_unit = NeuralUnit(centroid, self.activity_dim)
-            # Connect to cluster units
+            # Connect higher unit to cluster units
             for u in units:
                 delta_w = 0.1
                 hl_unit.hebian_update(u, delta_w)
@@ -172,39 +171,38 @@ class NeuralEcosystem:
 class SelfOrgPredictor:
     def __init__(self, input_dim):
         self.ecosystem = NeuralEcosystem(input_dim)
-        self.hierarchy = []  # higher level units
+        self.hierarchy_levels = []  # list of hierarchy layers
         self.history = []
 
     def predict(self, input_pattern):
         # Activate base units
         unit = self.ecosystem.process_input(input_pattern)
         pred = unit.position
-        # Form hierarchy periodically
+        # Build hierarchy if enough units
         if len(self.ecosystem.units) > 5:
-            self.hierarchy = self.ecosystem.form_hierarchy()
-        # Optionally, integrate higher level predictions
-        if self.hierarchy:
-            # average higher level units' positions
-            hl_pred = np.mean([u.position for u in self.hierarchy], axis=0)
-            pred = 0.5 * pred + 0.5 * hl_pred
+            level1 = self.ecosystem.form_hierarchy()
+            # Further hierarchy levels could be added here
+            # For simplicity, just one level
+            if level1:
+                centroid = np.mean([u.position for u in level1], axis=0)
+                pred = 0.5 * pred + 0.5 * centroid
         return pred
 
-    def learn(self, input_pattern, target):
-        # Activate base units and update
+    def learn(self, input_pattern, target, error_threshold=0.05):
         unit = self.ecosystem.process_input(input_pattern)
         pred = unit.position
         error = np.linalg.norm(pred - target)
-        # Adjust units towards target
+        # Adjust units toward target
         for u in self.ecosystem.units:
             u.position += 0.01 * (target - u.position) * u.activity
-        # Possibly add units if error high
+        # Grow new units if error high
         if error > 0.1:
             self.ecosystem.create_unit(target)
-        # Update hierarchy
+        # Form hierarchy for deeper abstraction
         if len(self.ecosystem.units) > 5:
-            self.hierarchy = self.ecosystem.form_hierarchy()
-            for hl_unit in self.hierarchy:
-                hl_unit.position += 0.01 * (target - hl_unit.position)
+            lvl1 = self.ecosystem.form_hierarchy()
+            for u in lvl1:
+                u.position += 0.01 * (target - u.position)
 
 # ----------- Streamlit App -----------
 
@@ -224,8 +222,6 @@ predictor = SelfOrgPredictor(input_dim)
 
 # Initialize memory
 episodic_memory = EpisodicMemory()
-working_memory = None
-semantic_memory = None
 
 # Main loop
 while True:
@@ -246,11 +242,9 @@ while True:
     for _ in range(3):
         pred = predictor.predict(current_input)
         preds.append(pred)
-        # Simulate next input
         current_input[:-1] = current_input[1:]
         current_input[-1] = pred[0]
 
-    # Inverse transform for visualization
     pred_array = np.copy(data_scaled[-1])
     pred_array[0] = preds[0][0]
     pred_close = scaler.inverse_transform([pred_array])[0][0]
@@ -258,15 +252,22 @@ while True:
     # Store in episodic memory
     episodic_memory.store_pattern(preds, emotional_tag=1.0)
 
-    # Compute error
+    # Compute prediction error
     error = abs(actual_close - pred_close)
 
-    # Learn from prediction error
+    # Learning
     predictor.learn(input_pattern, np.array([actual_close]))
 
-    # Hierarchical self-organization
+    # Hierarchical self-organization: form hierarchy if enough units
     if len(predictor.ecosystem.units) > 5:
-        predictor.ecosystem.form_hierarchy()
+        predictor.ecosystem.form_hierarchy(eps=0.4, min_samples=3)  # fine-tune clustering params
+
+    # Top-down feedback: update base units with hierarchy info
+    if predictor.hierarchy_levels:
+        for level in predictor.hierarchy_levels:
+            centroid = np.mean([u.position for u in level], axis=0)
+            for u in predictor.ecosystem.units:
+                u.position += 0.005 * (centroid - u.position)
 
     # Visualization
     with placeholder.container():
@@ -274,7 +275,6 @@ while True:
         st.metric("Predicted Next Close", f"{preds[0][0]:.2f}")
         st.metric("Actual Close", f"{actual_close:.2f}")
         st.metric("Error", f"{error:.2f}")
-
         fig, ax = plt.subplots()
         ax.plot([0,1,2], [preds[0][0], preds[1][0], preds[2][0]], label='Predicted')
         ax.scatter(0, actual_close, color='red', label='Actual')
