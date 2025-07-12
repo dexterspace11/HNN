@@ -1,16 +1,126 @@
-import streamlit as st 
+# ---------------- Enhanced Hierarchical Neural Network Trader -------------------
+import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import time
-from datetime import datetime
-import ccxt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
-from sklearn.cluster import DBSCAN
+import ccxt
+import time
+from datetime import datetime
 
-# ----------- Utility functions -----------
+# ---------------- Hybrid Memory Structures -------------------
+class EpisodicMemory:
+    def __init__(self):
+        self.episodes = {}
+        self.current_episode = None
 
+    def create_episode(self, timestamp):
+        self.current_episode = timestamp
+        self.episodes[timestamp] = {'patterns': [], 'emotional_tags': [], 'context': None}
+
+    def store_pattern(self, pattern, emotional_tag):
+        if self.current_episode is None:
+            self.create_episode(datetime.now())
+        self.episodes[self.current_episode]['patterns'].append(pattern)
+        self.episodes[self.current_episode]['emotional_tags'].append(emotional_tag)
+
+# ---------------- Hybrid Neural Structures -------------------
+class HybridNeuralUnit:
+    def __init__(self, position, learning_rate=0.1):
+        self.position = position
+        self.learning_rate = learning_rate
+        self.age = 0
+        self.usage_count = 0
+        self.reward = 0.0
+        self.emotional_weight = 1.0
+        self.last_spike_time = None
+        self.connections = {}
+
+    def quantum_inspired_distance(self, input_pattern):
+        diff = np.abs(input_pattern - self.position)
+        dist = np.sqrt(np.sum(diff ** 2))
+        decay = np.exp(-self.age / 100.0)
+        return (np.exp(-2.0 * dist) + 0.5 / (1 + 0.9 * dist)) * decay
+
+    def get_attention_score(self, input_pattern):
+        similarity = self.quantum_inspired_distance(input_pattern)
+        return similarity * self.emotional_weight
+
+    def update_spike_time(self):
+        self.last_spike_time = datetime.now()
+
+    def hebbian_learn(self, other_unit, strength, spike_timing=None):
+        stdp_factor = 1.0
+        if spike_timing:
+            pre_time = spike_timing.get('pre', datetime.now())
+            post_time = spike_timing.get('post', datetime.now())
+            timing_diff = (pre_time - post_time).total_seconds()
+            stdp_factor = np.exp(-abs(timing_diff) / 20.0)
+        strength *= stdp_factor
+        self.connections[other_unit] = self.connections.get(other_unit, 0.0) + strength * self.learning_rate * self.emotional_weight
+
+class HybridNeuralNetwork:
+    def __init__(self):
+        self.units = []
+        self.gen_threshold = 0.5
+        self.last_prediction = None
+        self.synaptic_scaling_factor = 1.0
+        self.episodic_memory = EpisodicMemory()
+
+    def generate_unit(self, position):
+        unit = HybridNeuralUnit(position)
+        self.units.append(unit)
+        return unit
+
+    def process_input(self, input_data):
+        if not self.units:
+            return self.generate_unit(input_data), 0.0
+
+        similarities = [(unit, unit.quantum_inspired_distance(input_data)) for unit in self.units]
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        best_unit, best_similarity = similarities[0]
+
+        emotional_tag = 1.0 + (best_similarity * 0.5)
+        self.episodic_memory.store_pattern(input_data, emotional_tag)
+        best_unit.emotional_weight = emotional_tag
+        best_unit.age = 0
+        best_unit.usage_count += 1
+        best_unit.update_spike_time()
+
+        if best_similarity < self.gen_threshold:
+            return self.generate_unit(input_data), 0.0
+
+        spike_timing = {'pre': best_unit.last_spike_time, 'post': datetime.now()}
+        for unit, similarity in similarities[:3]:
+            if unit != best_unit:
+                attention_score = unit.get_attention_score(input_data)
+                unit.hebbian_learn(best_unit, similarity * attention_score, spike_timing)
+            unit.age += 1
+
+        return best_unit, best_similarity
+
+    def predict_next(self, input_data, smoothing_factor):
+        unit, similarity = self.process_input(input_data)
+        predicted = unit.position
+
+        if len(self.units) > 1:
+            recent_units = sorted(self.units, key=lambda x: x.usage_count, reverse=True)[:2]
+            trend = recent_units[0].position - recent_units[1].position
+            predicted += trend * 0.2
+
+        if self.last_prediction is None:
+            smoothed = predicted
+        else:
+            smoothed = self.last_prediction * smoothing_factor + predicted * (1 - smoothing_factor)
+
+        self.last_prediction = smoothed
+        return smoothed, similarity
+
+    def estimate_uncertainty(self, similarity):
+        return (1.0 - similarity) * self.synaptic_scaling_factor
+
+# ---------------- Indicators & Data -------------------
 def calculate_rsi(prices, period=14):
     delta = prices.diff()
     gain = delta.where(delta > 0, 0)
@@ -35,169 +145,17 @@ def get_kucoin_data():
     df.dropna(inplace=True)
     return df
 
-# ----------- Memory Structures -----------
-
-class EpisodicMemory:
-    def __init__(self):
-        self.episodes = {}
-        self.current_episode = None
-    def create_episode(self, timestamp):
-        self.current_episode = timestamp
-        self.episodes[timestamp] = {'patterns': [], 'emotional_tags': [], 'context': None}
-    def store_pattern(self, pattern, emotional_tag):
-        if self.current_episode is None:
-            self.create_episode(datetime.now())
-        self.episodes[self.current_episode]['patterns'].append(pattern)
-        self.episodes[self.current_episode]['emotional_tags'].append(emotional_tag)
-
-# ----------- Neural Units -----------
-
-class NeuralUnit:
-    def __init__(self, position, activity_dim):
-        self.position = np.asarray(position).flatten()
-        self.activity_dim = activity_dim
-        self.age = 0
-        self.usage = 0
-        self.connections = {}  # unit -> weight
-        self.activity = 0
-        self.last_update = datetime.now()
-
-    def update_activity(self, input_pattern):
-        dist = np.linalg.norm(input_pattern - self.position)
-        self.activity = np.exp(-dist**2 / (2 * 0.1**2))
-        return self.activity
-
-    def hebbian_update(self, other_unit, delta_w):
-        if other_unit not in self.connections:
-            self.connections[other_unit] = 0.0
-        self.connections[other_unit] += delta_w
-        self.connections[other_unit] = min(max(self.connections[other_unit], 0), 1)
-
-# ----------- Ecosystem -----------
-
-class NeuralEcosystem:
-    def __init__(self, activity_dim, growth_threshold=0.6, prune_threshold=0.2):
-        self.units = []
-        self.activity_dim = activity_dim
-        self.growth_threshold = growth_threshold
-        self.prune_threshold = prune_threshold
-
-    def create_unit(self, position):
-        position = np.asarray(position).flatten()
-        u = NeuralUnit(position, self.activity_dim)
-        self.units.append(u)
-        return u
-
-    def process_input(self, input_pattern):
-        input_pattern = np.asarray(input_pattern).flatten()
-        if not self.units:
-            return self.create_unit(input_pattern)
-
-        activities = [(u, u.update_activity(input_pattern)) for u in self.units]
-        best_unit, best_act = max(activities, key=lambda x: x[1])
-        learning_rate = 0.05
-        best_unit.position += learning_rate * (input_pattern - best_unit.position) * best_act
-        best_unit.usage += 1
-        best_unit.age += 1
-        best_unit.last_update = datetime.now()
-
-        for u, act in activities:
-            if u != best_unit:
-                delta_w = 0.1 * best_act * act
-                best_unit.hebbian_update(u, delta_w)
-
-        if best_act > self.growth_threshold:
-            self.create_unit(input_pattern)
-
-        self.prune_units()
-        return best_unit
-
-    def prune_units(self):
-        self.units = [u for u in self.units if u.usage > 2 or u.age < 100]
-
-    def cluster_units(self, eps=0.4, min_samples=3):
-        if len(self.units) < 2:
-            return {}
-
-        valid_units = []
-        positions = []
-        for u in self.units:
-            pos = np.asarray(u.position).flatten()
-            if pos.ndim == 1 and pos.shape[0] == self.activity_dim:
-                valid_units.append(u)
-                positions.append(pos)
-
-        if len(positions) < 2:
-            return {}
-
-        positions = np.vstack(positions)
-        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(positions)
-        labels = clustering.labels_
-        clusters = {}
-        for u, lbl in zip(valid_units, labels):
-            clusters.setdefault(lbl, []).append(u)
-        return clusters
-
-    def form_hierarchy(self, eps=0.4, min_samples=3):
-        clusters = self.cluster_units(eps, min_samples)
-        hierarchy_units = []
-        for lbl, units in clusters.items():
-            if lbl == -1:
-                continue
-            centroid = np.mean([u.position for u in units], axis=0)
-            hl_unit = NeuralUnit(centroid, self.activity_dim)
-            for u in units:
-                hl_unit.hebbian_update(u, 0.1)
-            hierarchy_units.append(hl_unit)
-        return hierarchy_units
-
-# ----------- Predictor -----------
-
-class SelfOrgPredictor:
-    def __init__(self, input_dim):
-        self.ecosystem = NeuralEcosystem(input_dim)
-        self.history = []
-
-    def predict(self, input_pattern):
-        input_pattern = np.asarray(input_pattern).flatten()
-        unit = self.ecosystem.process_input(input_pattern)
-        pred = unit.position
-        if len(self.ecosystem.units) > 5:
-            level1 = self.ecosystem.form_hierarchy()
-            if level1:
-                centroid = np.mean([u.position for u in level1], axis=0)
-                pred = 0.5 * pred + 0.5 * centroid
-        return pred
-
-    def learn(self, input_pattern, target, error_threshold=0.05):
-        input_pattern = np.asarray(input_pattern).flatten()
-        target = np.asarray(target).flatten()
-        unit = self.ecosystem.process_input(input_pattern)
-        pred = unit.position
-        error = np.linalg.norm(pred - target)
-        for u in self.ecosystem.units:
-            u.position += 0.01 * (target - u.position) * u.activity
-        if error > 0.1:
-            self.ecosystem.create_unit(target)
-        if len(self.ecosystem.units) > 5:
-            level1 = self.ecosystem.form_hierarchy()
-            for u in level1:
-                u.position += 0.01 * (target - u.position)
-
-# ----------- Streamlit App -----------
-
+# ---------------- Streamlit UI -------------------
 exchange = ccxt.kucoin()
 symbol = 'BTC/USDT'
 timeframe = '1m'
 data_limit = 200
 
-st.set_page_config(page_title="Hierarchical Self-Organizing Neural Predictor", layout="wide")
-st.title("🧠 Brain-like Hierarchical Neural Predictor")
+st.set_page_config(page_title="Enhanced HNNTrader", layout="wide")
+st.title("Enhanced Hierarchical Neural Network Trader")
 
 placeholder = st.empty()
-
-predictor = SelfOrgPredictor(input_dim=4)
-episodic_memory = EpisodicMemory()
+network = HybridNeuralNetwork()
 
 while True:
     df = get_kucoin_data()
@@ -207,44 +165,38 @@ while True:
     scaler = MinMaxScaler()
     data_scaled = scaler.fit_transform(data_imputed)
 
-    input_pattern = data_scaled[-1]
+    smoothing_factor = 0.3 if df['ATR'].iloc[-1] > df['close'].std() * 0.01 else 0.7
+    input_window = data_scaled[-5:].flatten()
+
     actual_time = df.index[-1]
     actual_close = df['close'].iloc[-1]
 
-    preds = []
-    current_input = input_pattern.copy()
+    preds_scaled = []
+    current_input = input_window.copy()
     for _ in range(3):
-        pred = predictor.predict(current_input)
-        preds.append(pred)
+        pred_scaled, sim = network.predict_next(current_input, smoothing_factor)
+        preds_scaled.append(pred_scaled)
         current_input[:-1] = current_input[1:]
-        current_input[-1] = pred[0]
+        current_input[-1] = pred_scaled[0]
 
-    pred_array = np.copy(data_scaled[-1])
-    pred_array[0] = preds[0][0]
-    pred_close = scaler.inverse_transform([pred_array])[0][0]
-
-    episodic_memory.store_pattern(preds, emotional_tag=1.0)
-    error = abs(actual_close - pred_close)
-
-    predictor.learn(input_pattern, np.array([actual_close]))
-
-    if len(predictor.ecosystem.units) > 5:
-        predictor.ecosystem.form_hierarchy()
-
-    hierarchy_units = predictor.ecosystem.form_hierarchy()
-    if hierarchy_units:
-        centroid = np.mean([u.position for u in hierarchy_units], axis=0)
-        for u in predictor.ecosystem.units:
-            u.position += 0.005 * (centroid - u.position)
+    pred_closes = []
+    for p in preds_scaled:
+        reconstructed = np.copy(data_scaled[-1])
+        reconstructed[0] = p[0]
+        pred_closes.append(scaler.inverse_transform([reconstructed])[0][0])
 
     with placeholder.container():
-        st.markdown(f"### ⏱ Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        st.metric("📈 Predicted Next Close", f"{preds[0][0]:.2f}")
-        st.metric("📉 Actual Close", f"{actual_close:.2f}")
-        st.metric("❌ Prediction Error", f"{error:.2f}")
+        st.markdown(f"### Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Next Close +1", f"{pred_closes[0]:.2f}")
+        col2.metric("Next Close +2", f"{pred_closes[1]:.2f}")
+        col3.metric("Next Close +3", f"{pred_closes[2]:.2f}")
+        col4.metric("Actual Close", f"{actual_close:.2f}")
+
         fig, ax = plt.subplots()
-        ax.plot([0, 1, 2], [preds[0][0], preds[1][0], preds[2][0]], label='Predicted')
-        ax.scatter(0, actual_close, color='red', label='Actual')
+        ax.plot([1, 2, 3], pred_closes, marker='o', label='Predicted')
+        ax.axhline(actual_close, color='red', linestyle='--', label='Actual')
+        ax.set_title("Predicted Next 3 Close Values")
         ax.legend()
         st.pyplot(fig)
 
