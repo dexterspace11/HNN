@@ -1,4 +1,4 @@
-# ---------------- Updated Dream-Based Streamlit Neural Trading System -------------------
+# ---------------- Updated Dream-Based Streamlit Neural Trading System with Dynamic Charts -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -151,38 +151,12 @@ while True:
     with placeholder.container():
         st.metric("🧠 Signal Score", f"{signal_score:.4f}")
         st.metric("📈 Predicted Close", f"{predicted_close:.2f}")
+        st.metric("📉 Actual Close", f"{actual_close:.2f}")
         st.metric("💰 Capital", f"{capital_usdt:.2f} USDT")
         st.metric("📊 Win Ratio", f"{win_ratio:.2%}")
         st.metric("📈 Sharpe Ratio", f"{sharpe_ratio:.2f}")
         st.metric("📈 Cumulative Profit", f"{cumulative_profit:.2f} USDT")
 
     with chart_placeholder.container():
-        st.subheader("Prediction vs Actual Close")
-        hist_df = pd.DataFrame(prediction_history[-100:])
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(hist_df['Time'], hist_df['Actual'], label='Actual', marker='o')
-        ax.plot(hist_df['Time'], hist_df['Predicted'], label='Predicted', marker='x')
-        ax.fill_between(hist_df['Time'], hist_df['Predicted'] - hist_df['Error'],
-                        hist_df['Predicted'] + hist_df['Error'], color='orange', alpha=0.2)
-        ax.set_title("Prediction Accuracy")
-        ax.legend()
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
-        plt.close(fig)
-
-        st.subheader("Executed Trades")
-        if executed_trades:
-            log_df = pd.DataFrame(executed_trades)
-            log_df['Profit'] = log_df['Sell'] - log_df['Buy']
-            st.dataframe(log_df[['Time', 'Buy', 'Sell', 'Profit', 'Status', 'CloseTime']].tail(10))
-        else:
-            st.write("No trades executed yet.")
-
-    with stats_placeholder.container():
-        st.subheader("Neural Network Growth")
-        st.metric("Neural Units", stats['unit_count'])
-        st.metric("Avg Reward", f"{stats['avg_reward']:.4f}")
-        st.metric("Avg Usage", f"{stats['avg_usage']:.2f}")
-
-    time.sleep(60)
-
+        st.subheader("📊 Dynamic Prediction vs Actual Close")
+        hist_df = pd.DataFrame(prediction_history[
