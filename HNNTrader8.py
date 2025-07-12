@@ -139,8 +139,8 @@ class NeuralEcosystem:
         # Remove units with low usage or old age
         self.units = [u for u in self.units if u.usage > 2 or u.age < 100]
 
-    def cluster_units(self, eps=0.5, min_samples=2):
-        # Cluster based on positions to identify groups
+    def cluster_units(self, eps=0.4, min_samples=3):
+        # Cluster based on positions
         if len(self.units) < 2:
             return {}
         positions = np.array([u.position for u in self.units])
@@ -151,7 +151,7 @@ class NeuralEcosystem:
             clusters.setdefault(lbl, []).append(u)
         return clusters
 
-    def form_hierarchy(self, eps=0.5, min_samples=2):
+    def form_hierarchy(self, eps=0.4, min_samples=3):
         clusters = self.cluster_units(eps, min_samples)
         hierarchy_units = []
         for lbl, units in clusters.items():
@@ -182,26 +182,26 @@ class SelfOrgPredictor:
         if len(self.ecosystem.units) > 5:
             level1 = self.ecosystem.form_hierarchy()
             # Further hierarchy levels could be added here
-            # For simplicity, just one level
             if level1:
                 centroid = np.mean([u.position for u in level1], axis=0)
                 pred = 0.5 * pred + 0.5 * centroid
         return pred
 
     def learn(self, input_pattern, target, error_threshold=0.05):
+        # Activate base units
         unit = self.ecosystem.process_input(input_pattern)
         pred = unit.position
         error = np.linalg.norm(pred - target)
-        # Adjust units toward target
+        # Adjust units towards target
         for u in self.ecosystem.units:
             u.position += 0.01 * (target - u.position) * u.activity
-        # Grow new units if error high
+        # Add units if error large
         if error > 0.1:
             self.ecosystem.create_unit(target)
         # Form hierarchy for deeper abstraction
         if len(self.ecosystem.units) > 5:
-            lvl1 = self.ecosystem.form_hierarchy()
-            for u in lvl1:
+            level1 = self.ecosystem.form_hierarchy()
+            for u in level1:
                 u.position += 0.01 * (target - u.position)
 
 # ----------- Streamlit App -----------
@@ -242,6 +242,7 @@ while True:
     for _ in range(3):
         pred = predictor.predict(current_input)
         preds.append(pred)
+        # simulate next input
         current_input[:-1] = current_input[1:]
         current_input[-1] = pred[0]
 
@@ -255,17 +256,18 @@ while True:
     # Compute prediction error
     error = abs(actual_close - pred_close)
 
-    # Learning
+    # Learn and adapt
     predictor.learn(input_pattern, np.array([actual_close]))
 
-    # Hierarchical self-organization: form hierarchy if enough units
+    # Form hierarchy
     if len(predictor.ecosystem.units) > 5:
-        predictor.ecosystem.form_hierarchy(eps=0.4, min_samples=3)  # fine-tune clustering params
+        predictor.ecosystem.form_hierarchy(eps=0.4, min_samples=3)
 
-    # Top-down feedback: update base units with hierarchy info
-    if predictor.hierarchy_levels:
-        for level in predictor.hierarchy_levels:
-            centroid = np.mean([u.position for u in level], axis=0)
+    # Top-down feedback: move base units toward hierarchy centroid
+    if predictor.ecosystem.units:
+        hierarchy_units = predictor.ecosystem.form_hierarchy(eps=0.4, min_samples=3)
+        if hierarchy_units:
+            centroid = np.mean([u.position for u in hierarchy_units], axis=0)
             for u in predictor.ecosystem.units:
                 u.position += 0.005 * (centroid - u.position)
 
@@ -274,7 +276,7 @@ while True:
         st.markdown(f"### Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         st.metric("Predicted Next Close", f"{preds[0][0]:.2f}")
         st.metric("Actual Close", f"{actual_close:.2f}")
-        st.metric("Error", f"{error:.2f}")
+        st.metric("Prediction Error", f"{error:.2f}")
         fig, ax = plt.subplots()
         ax.plot([0,1,2], [preds[0][0], preds[1][0], preds[2][0]], label='Predicted')
         ax.scatter(0, actual_close, color='red', label='Actual')
