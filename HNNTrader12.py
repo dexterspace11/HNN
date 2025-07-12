@@ -94,6 +94,7 @@ net = DreamNet()
 capital_usdt = 1000
 trade_amount = 100
 executed_trades = []
+prediction_history = []
 
 placeholder = st.empty()
 chart_placeholder = st.empty()
@@ -108,6 +109,13 @@ while True:
     signal_score = net.process(current_input)
     predicted_close = current_input[0] + np.random.normal(0, 0.5)
     actual_close = df['close'].iloc[-1]
+
+    prediction_history.append({
+        'Time': datetime.now(),
+        'Actual': actual_close,
+        'Predicted': predicted_close,
+        'Error': abs(actual_close - predicted_close),
+    })
 
     buy_signal = signal_score > 0.3 and capital_usdt >= trade_amount
     if buy_signal:
@@ -134,6 +142,7 @@ while True:
     win_ratio = len(win_trades) / total_trades if total_trades > 0 else 0
     returns = [(t['Sell'] - t['Buy']) / t['Buy'] for t in win_trades]
     sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-6) if returns else 0
+    cumulative_profit = capital_usdt - 1000
 
     with placeholder.container():
         st.metric("🧠 Signal Score", f"{signal_score:.4f}")
@@ -141,8 +150,22 @@ while True:
         st.metric("💰 Capital", f"{capital_usdt:.2f} USDT")
         st.metric("📊 Win Ratio", f"{win_ratio:.2%}")
         st.metric("📈 Sharpe Ratio", f"{sharpe_ratio:.2f}")
+        st.metric("📈 Cumulative Profit", f"{cumulative_profit:.2f} USDT")
 
     with chart_placeholder.container():
+        st.subheader("Prediction vs Actual Close")
+        hist_df = pd.DataFrame(prediction_history[-100:])
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(hist_df['Time'], hist_df['Actual'], label='Actual', marker='o')
+        ax.plot(hist_df['Time'], hist_df['Predicted'], label='Predicted', marker='x')
+        ax.fill_between(hist_df['Time'], hist_df['Predicted'] - hist_df['Error'],
+                        hist_df['Predicted'] + hist_df['Error'], color='orange', alpha=0.2)
+        ax.set_title("Prediction Accuracy")
+        ax.legend()
+        plt.xticks(rotation=45)
+        st.pyplot(fig)
+        plt.close(fig)
+
         st.subheader("Executed Trades")
         if executed_trades:
             log_df = pd.DataFrame(executed_trades)
