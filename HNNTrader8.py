@@ -54,7 +54,7 @@ class EpisodicMemory:
 
 class NeuralUnit:
     def __init__(self, position, activity_dim):
-        self.position = position
+        self.position = np.asarray(position).flatten()
         self.activity_dim = activity_dim
         self.age = 0
         self.usage = 0
@@ -82,7 +82,14 @@ class NeuralEcosystem:
         self.growth_threshold = growth_threshold
         self.prune_threshold = prune_threshold
 
+    def create_unit(self, position):
+        position = np.asarray(position).flatten()
+        u = NeuralUnit(position, self.activity_dim)
+        self.units.append(u)
+        return u
+
     def process_input(self, input_pattern):
+        input_pattern = np.asarray(input_pattern).flatten()
         if not self.units:
             return self.create_unit(input_pattern)
 
@@ -105,22 +112,29 @@ class NeuralEcosystem:
         self.prune_units()
         return best_unit
 
-    def create_unit(self, position):
-        u = NeuralUnit(position, self.activity_dim)
-        self.units.append(u)
-        return u
-
     def prune_units(self):
         self.units = [u for u in self.units if u.usage > 2 or u.age < 100]
 
     def cluster_units(self, eps=0.4, min_samples=3):
         if len(self.units) < 2:
             return {}
-        positions = np.array([u.position for u in self.units])
+
+        valid_units = []
+        positions = []
+        for u in self.units:
+            pos = np.asarray(u.position).flatten()
+            if pos.ndim == 1 and pos.shape[0] == self.activity_dim:
+                valid_units.append(u)
+                positions.append(pos)
+
+        if len(positions) < 2:
+            return {}
+
+        positions = np.vstack(positions)
         clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(positions)
         labels = clustering.labels_
         clusters = {}
-        for u, lbl in zip(self.units, labels):
+        for u, lbl in zip(valid_units, labels):
             clusters.setdefault(lbl, []).append(u)
         return clusters
 
@@ -145,6 +159,7 @@ class SelfOrgPredictor:
         self.history = []
 
     def predict(self, input_pattern):
+        input_pattern = np.asarray(input_pattern).flatten()
         unit = self.ecosystem.process_input(input_pattern)
         pred = unit.position
         if len(self.ecosystem.units) > 5:
@@ -155,6 +170,8 @@ class SelfOrgPredictor:
         return pred
 
     def learn(self, input_pattern, target, error_threshold=0.05):
+        input_pattern = np.asarray(input_pattern).flatten()
+        target = np.asarray(target).flatten()
         unit = self.ecosystem.process_input(input_pattern)
         pred = unit.position
         error = np.linalg.norm(pred - target)
