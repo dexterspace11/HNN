@@ -69,7 +69,7 @@ class NeuralUnit:
 
     def hebbian_update(self, other_unit, delta_w):
         if other_unit not in self.connections:
-            self.connections[other_unit] = 0
+            self.connections[other_unit] = 0.0
         self.connections[other_unit] += delta_w
         self.connections[other_unit] = min(max(self.connections[other_unit], 0), 1)
 
@@ -97,7 +97,7 @@ class NeuralEcosystem:
         for u, act in activities:
             if u != best_unit:
                 delta_w = 0.1 * best_act * act
-                best_unit.hebian_update(u, delta_w)
+                best_unit.hebbian_update(u, delta_w)
 
         if best_act > self.growth_threshold:
             self.create_unit(input_pattern)
@@ -133,7 +133,7 @@ class NeuralEcosystem:
             centroid = np.mean([u.position for u in units], axis=0)
             hl_unit = NeuralUnit(centroid, self.activity_dim)
             for u in units:
-                hl_unit.hebian_update(u, 0.1)
+                hl_unit.hebbian_update(u, 0.1)
             hierarchy_units.append(hl_unit)
         return hierarchy_units
 
