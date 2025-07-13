@@ -3,7 +3,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import ccxt, time, pickle, os
+import ccxt, time, os
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
 from datetime import datetime
@@ -56,14 +56,14 @@ def main():
         st.session_state.position = None
     if 'prediction_log' not in st.session_state:
         st.session_state.prediction_log = []
+
+    # Properly load agent using static load method
     if 'agent' not in st.session_state:
-        st.session_state.agent = SelfLearningTrader()
-        if os.path.exists("agent_state.pkl"):
-            try:
-                st.session_state.agent.load()
-            except AttributeError:
-                st.warning("Incompatible agent_state.pkl file. Starting fresh.")
-                os.remove("agent_state.pkl")
+        try:
+            st.session_state.agent = SelfLearningTrader.load()
+        except Exception:
+            st.warning("Incompatible agent_state.pkl file or load error. Starting fresh.")
+            st.session_state.agent = SelfLearningTrader()
 
     network = HybridNeuralNetwork()
     metrics = PatternRecognitionMetrics(network)
@@ -99,7 +99,7 @@ def main():
         action_msg = f"Holding (no position)"
 
     st.session_state.agent.learn(input_window, action, reward)
-    st.session_state.agent.save()
+    st.session_state.agent.save()  # Save agent state after learning
 
     predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
     reconstructed = np.copy(data_scaled[-1])
@@ -181,7 +181,7 @@ def main():
 
     st.text("Refreshing in 60 seconds...")
     time.sleep(60)
-    st.rerun()
+    st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
