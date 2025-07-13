@@ -181,7 +181,7 @@ def main():
 
     st.text("Refreshing in 60 seconds...")
     time.sleep(60)
-    st.experimental_rerun()
+    st.rerun()
 
 if __name__ == "__main__":
     main()
