@@ -1,4 +1,5 @@
-# ---------------- Final Adaptive Dream-Hybrid Neural Trading System -------------------
+# dream_hybrid_trader.py
+
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -153,14 +154,121 @@ def get_kucoin_data():
 def main():
     st.set_page_config(page_title="Dream-Hybrid Trader", layout="wide")
     st.title("🧠📈 Adaptive Dream-Hybrid BTC/USDT Neural Trader")
+
     global exchange, symbol, timeframe
     exchange = ccxt.kucoin()
     symbol = 'BTC/USDT'
     timeframe = '1m'
 
     network, memory_log = load_state()
-    st.write("📡 Starting adaptive trading loop...")
-    st.warning("Run this script outside Streamlit to start the trading loop.")
+    prediction_log = []
+    capital_usdt = 1000
+    trade_amount = 100
+    executed_trades = []
+    open_trades = []
+
+    placeholder = st.empty()
+    chart_placeholder = st.empty()
+    metrics_placeholder = st.empty()
+
+    while True:
+        df = get_kucoin_data()
+        features = ['close', 'RSI', 'MA20', 'ATR']
+        imputer = SimpleImputer(strategy='mean')
+        scaler = MinMaxScaler()
+        data_scaled = scaler.fit_transform(imputer.fit_transform(df[features]))
+
+        input_pattern = data_scaled[-5:].flatten()
+        actual_close = df['close'].iloc[-1]
+        smoothing = 0.3 if df['ATR'].iloc[-1] > df['close'].std() * 0.01 else 0.7
+
+        predicted_scaled, similarity = network.predict_next(input_pattern, smoothing)
+        reconstructed = np.copy(data_scaled[-1])
+        reconstructed[0] = predicted_scaled[0]
+        predicted_close = scaler.inverse_transform([reconstructed])[0][0]
+
+        prediction_log.append({
+            'Time': datetime.now(),
+            'Actual': actual_close,
+            'Predicted': predicted_close,
+            'Error': abs(actual_close - predicted_close)
+        })
+
+        # Allow algorithm to learn trade logic
+        adaptive_trade_amount = trade_amount * min(1.5, max(0.5, similarity * 2))
+
+        if similarity > 0.3 and capital_usdt >= adaptive_trade_amount:
+            sell_price = predicted_close * 1.01
+            open_trades.append({
+                'Time': datetime.now(), 'Buy': predicted_close, 'Sell': sell_price,
+                'Status': 'Open', 'Amount': adaptive_trade_amount
+            })
+            capital_usdt -= adaptive_trade_amount
+
+        for trade in open_trades:
+            if trade['Status'] == 'Open':
+                if actual_close >= trade['Sell']:
+                    trade['Status'] = 'Closed'
+                    capital_usdt += trade['Sell']
+                    trade['CloseTime'] = datetime.now()
+                    executed_trades.append(trade)
+                elif actual_close < trade['Buy'] * 0.985:
+                    trade['Status'] = 'Closed'
+                    capital_usdt += actual_close
+                    trade['Sell'] = actual_close
+                    trade['CloseTime'] = datetime.now()
+                    executed_trades.append(trade)
+                    network.reinforce_failure(input_pattern)
+
+        open_trades = [t for t in open_trades if t['Status'] == 'Open']
+        stats = network.get_stats()
+        win_trades = [t for t in executed_trades if t['Sell'] > t['Buy']]
+        returns = [(t['Sell'] - t['Buy']) / t['Buy'] for t in executed_trades]
+        win_ratio = len(win_trades) / len(executed_trades) if executed_trades else 0
+        sharpe = np.mean(returns) / (np.std(returns) + 1e-6) if returns else 0
+        profit = capital_usdt - 1000
+
+        memory_log.append((datetime.now(), actual_close, predicted_close, similarity))
+        save_state(network, memory_log)
+
+        with placeholder.container():
+            st.metric("Predicted Close", f"{predicted_close:.2f}")
+            st.metric("Actual Close", f"{actual_close:.2f}")
+            st.metric("Capital", f"{capital_usdt:.2f} USDT")
+            st.metric("Win Ratio", f"{win_ratio:.2%}")
+            st.metric("Sharpe Ratio", f"{sharpe:.2f}")
+            st.metric("Cumulative Profit", f"{profit:.2f} USDT")
+
+        with chart_placeholder.container():
+            st.subheader("📊 Prediction vs Actual Close")
+            hist_df = pd.DataFrame(prediction_log[-100:])
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(hist_df['Time'], hist_df['Actual'], label='Actual', marker='o')
+            ax.plot(hist_df['Time'], hist_df['Predicted'], label='Predicted', marker='x')
+            ax.fill_between(hist_df['Time'], hist_df['Predicted'] - hist_df['Error'],
+                            hist_df['Predicted'] + hist_df['Error'], color='orange', alpha=0.2)
+            ax.legend()
+            st.pyplot(fig)
+            plt.close(fig)
+
+            st.subheader("📟 Executed Trades")
+            if executed_trades:
+                df_exec = pd.DataFrame(executed_trades)
+                df_exec['Profit'] = df_exec['Sell'] - df_exec['Buy']
+                st.dataframe(df_exec.tail(10))
+
+            st.subheader("📌 Open Trades")
+            if open_trades:
+                df_open = pd.DataFrame(open_trades)
+                st.dataframe(df_open.tail(10))
+
+        with metrics_placeholder.container():
+            st.subheader("📈 Neural Network Stats")
+            st.metric("Neural Units", stats['unit_count'])
+            st.metric("Avg Reward", f"{stats['avg_reward']:.4f}")
+            st.metric("Avg Usage", f"{stats['avg_usage']:.2f}")
+
+        time.sleep(60)
 
 if __name__ == "__main__":
     main()
