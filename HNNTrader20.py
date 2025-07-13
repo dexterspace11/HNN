@@ -1,4 +1,4 @@
-# ---------------- Unified True Self-Learning Dream-Hybrid Neural Trading System with Metrics -------------------
+# ---------------- Unified True Self-Learning Dream-Hybrid Neural Trading System -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -7,9 +7,135 @@ import ccxt, time, pickle, os
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
 from datetime import datetime
-from collections import deque
 
-# ---------------- Reinforcement Unit -------------------
+# --- All needed class definitions go here ---
+
+# EpisodicMemory
+class EpisodicMemory:
+    def __init__(self):
+        self.episodes = {}
+        self.current_episode = None
+    def create_episode(self, timestamp):
+        self.current_episode = timestamp
+        self.episodes[timestamp] = {'patterns': [], 'emotional_tags': [], 'context': None}
+    def store_pattern(self, pattern, emotional_tag):
+        if self.current_episode is None:
+            self.create_episode(datetime.now())
+        self.episodes[self.current_episode]['patterns'].append(pattern)
+        self.episodes[self.current_episode]['emotional_tags'].append(emotional_tag)
+
+# WorkingMemory
+class WorkingMemory:
+    def __init__(self, capacity=20):
+        self.capacity = capacity
+        self.short_term_patterns = []
+        self.temporal_context = []
+    def store(self, pattern, temporal_marker):
+        if len(self.short_term_patterns) >= self.capacity:
+            self.short_term_patterns.pop(0)
+            self.temporal_context.pop(0)
+        self.short_term_patterns.append(pattern)
+        self.temporal_context.append(temporal_marker)
+
+# SemanticMemory
+class SemanticMemory:
+    def __init__(self):
+        self.pattern_relationships = {}
+    def store_relationship(self, pattern1, pattern2, strength):
+        key = tuple(sorted([str(p) for p in [pattern1, pattern2]]))
+        self.pattern_relationships[key] = strength
+
+# HybridNeuralUnit
+class HybridNeuralUnit:
+    def __init__(self, position, learning_rate=0.1):
+        self.position = position
+        self.learning_rate = learning_rate
+        self.age = 0
+        self.usage_count = 0
+        self.reward = 0.0
+        self.emotional_weight = 1.0
+        self.last_spike_time = None
+        self.connections = {}
+    def quantum_inspired_distance(self, input_pattern):
+        diff = np.abs(input_pattern - self.position)
+        dist = np.sqrt(np.sum(diff ** 2))
+        decay = np.exp(-self.age / 100.0)
+        return (np.exp(-2.0 * dist) + 0.5 / (1 + 0.9 * dist)) * decay
+    def get_attention_score(self, input_pattern):
+        similarity = self.quantum_inspired_distance(input_pattern)
+        return similarity * self.emotional_weight
+    def update_spike_time(self):
+        self.last_spike_time = datetime.now()
+    def hebbian_learn(self, other_unit, strength, spike_timing=None):
+        stdp_factor = 1.0
+        if spike_timing:
+            pre_time = spike_timing.get('pre', datetime.now())
+            post_time = spike_timing.get('post', datetime.now())
+            timing_diff = (pre_time - post_time).total_seconds()
+            stdp_factor = np.exp(-abs(timing_diff) / 20.0)
+        strength *= stdp_factor
+        self.connections[other_unit] = self.connections.get(other_unit, 0.0) + strength * self.learning_rate * self.emotional_weight
+
+# HybridNeuralNetwork
+class HybridNeuralNetwork:
+    def __init__(self):
+        self.units = []
+        self.gen_threshold = 0.5
+        self.feature_importance = None
+        self.drift_threshold = 0.05
+        self.last_prediction = None
+        self.episodic_memory = EpisodicMemory()
+        self.working_memory = WorkingMemory()
+        self.semantic_memory = SemanticMemory()
+        self.synaptic_scaling_factor = 1.0
+    def generate_unit(self, position):
+        unit = HybridNeuralUnit(position)
+        self.units.append(unit)
+        return unit
+    def process_input(self, input_data):
+        if not self.units:
+            return self.generate_unit(input_data), 0.0
+        similarities = [(unit, unit.quantum_inspired_distance(input_data)) for unit in self.units]
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        best_unit, best_similarity = similarities[0]
+        emotional_tag = 1.0 + (best_similarity * 0.5)
+        self.episodic_memory.store_pattern(input_data, emotional_tag)
+        self.working_memory.store(input_data, datetime.now())
+        best_unit.emotional_weight = emotional_tag
+        best_unit.age = 0
+        best_unit.usage_count += 1
+        best_unit.update_spike_time()
+        if best_similarity < self.gen_threshold:
+            return self.generate_unit(input_data), 0.0
+        spike_timing = {'pre': best_unit.last_spike_time, 'post': datetime.now()}
+        for unit, similarity in similarities[:3]:
+            if unit != best_unit:
+                attention_score = unit.get_attention_score(input_data)
+                unit.hebbian_learn(best_unit, similarity * attention_score, spike_timing)
+            unit.age += 1
+        return best_unit, best_similarity
+    def predict_next(self, input_data, smoothing_factor):
+        unit, similarity = self.process_input(input_data)
+        predicted = unit.position
+        if len(self.units) > 1:
+            recent_units = sorted(self.units, key=lambda x: x.usage_count, reverse=True)[:2]
+            trend = recent_units[0].position - recent_units[1].position
+            predicted += trend * 0.2
+        if self.last_prediction is None:
+            smoothed = predicted
+        else:
+            smoothed = self.last_prediction * smoothing_factor + predicted * (1 - smoothing_factor)
+        self.last_prediction = smoothed
+        return smoothed, similarity
+    def estimate_uncertainty(self, similarity):
+        return (1.0 - similarity) * self.synaptic_scaling_factor
+    def quantum_inspired_distance(self, pattern):
+        if not self.units:
+            return 0.0
+        similarities = [unit.quantum_inspired_distance(pattern) for unit in self.units]
+        return max(similarities)
+
+# SelfLearningNeuron
 class SelfLearningNeuron:
     def __init__(self, state_size):
         self.state = np.random.rand(state_size)
@@ -17,52 +143,42 @@ class SelfLearningNeuron:
         self.usage = 0
         self.reward = 0.0
         self.connections = {}
-
     def distance(self, input_state):
         return np.linalg.norm(self.state - input_state)
-
     def activate(self, input_state):
         self.usage += 1
         return np.exp(-self.distance(input_state))
-
     def reinforce(self, reward):
         self.reward += reward
         self.value += reward * 0.1
 
-# ---------------- Agent -------------------
+# SelfLearningTrader
 class SelfLearningTrader:
     def __init__(self):
         self.neurons = []
         self.memory = []
         self.epsilon = 1.0  # Exploration rate
-
     def act(self, state):
         if not self.neurons or np.random.rand() < self.epsilon:
             neuron = SelfLearningNeuron(len(state))
             neuron.state = state
             self.neurons.append(neuron)
             return neuron, np.random.choice(['buy', 'sell', 'hold'])
-
         scores = [(n, n.activate(state)) for n in self.neurons]
         best_neuron = max(scores, key=lambda x: x[1])[0]
         return best_neuron, max(self.memory[-1]["action_values"], key=self.memory[-1]["action_values"].get) if self.memory else 'hold'
-
     def learn(self, state, action, reward):
         neuron = SelfLearningNeuron(len(state))
         neuron.state = state
         neuron.reinforce(reward)
         self.neurons.append(neuron)
         self.memory.append({"state": state, "action": action, "reward": reward, "action_values": {'buy': 0, 'sell': 0, 'hold': 0}})
-
         if len(self.memory) >= 2:
             self.memory[-2]["action_values"][action] += reward * 0.1
-
         self.epsilon = max(0.05, self.epsilon * 0.995)
-
     def save(self):
         with open("agent_state.pkl", "wb") as f:
             pickle.dump((self.neurons, self.memory), f)
-
     def load(self):
         if os.path.exists("agent_state.pkl"):
             with open("agent_state.pkl", "rb") as f:
@@ -78,181 +194,183 @@ def calculate_rsi(prices, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def get_kucoin_data(symbol='BTC/USDT', timeframe='1m'):
-    bars = exchange.fetch_ohlcv(symbol, timeframe, limit=200)
+def calculate_atr(high, low, close, period=14):
+    tr = np.maximum(high - low, np.maximum(abs(high - close.shift(1)), abs(low - close.shift(1))))
+    return pd.Series(tr).rolling(window=period).mean()
+
+def get_kucoin_data(symbol='BTC/USDT', timeframe='1m', limit=200):
+    bars = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
     df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     df.set_index('timestamp', inplace=True)
     df['RSI'] = calculate_rsi(df['close'])
     df['MA20'] = df['close'].rolling(window=20).mean()
+    df['ATR'] = calculate_atr(df['high'], df['low'], df['close'])
     df.dropna(inplace=True)
     return df
 
-# --------------- Metrics functions ---------------
-def sharpe_ratio(returns, risk_free_rate=0.0):
-    if len(returns) < 2:
-        return 0.0
-    excess_returns = returns - risk_free_rate
-    return np.sqrt(252) * np.mean(excess_returns) / np.std(excess_returns) if np.std(excess_returns) != 0 else 0
-
-def max_drawdown(prices):
-    cummax = np.maximum.accumulate(prices)
-    drawdowns = (prices - cummax) / cummax
-    return drawdowns.min()
-
-def extract_trading_rules(neurons):
-    if not neurons:
-        return "No learned trading rules yet."
-    # Simplified example: average neuron state vectors, interpret feature importance
-    avg_state = np.mean([n.state for n in neurons], axis=0)
-    rule_summary = "Current learned trading pattern feature importance (normalized):\n"
-    normalized = (avg_state - np.min(avg_state)) / (np.ptp(avg_state) + 1e-9)
-    for i, val in enumerate(normalized):
-        rule_summary += f" - Feature {i}: {val:.2f}\n"
-    return rule_summary
+# ---------------- Pattern Recognition Metrics -------------------
+class PatternRecognitionMetrics:
+    def __init__(self, network):
+        self.network = network
+        self.pattern_history = []
+        self.signal_history = []
+    def verify_pattern_learning(self, test_data):
+        patterns = [test_data[['close', 'RSI', 'MA20', 'ATR']].iloc[i].values for i in range(len(test_data) - 1)]
+        padded_patterns = [np.pad(p, (0, 20 - len(p)), mode='constant') if len(p) < 20 else p for p in patterns]
+        recognized = sum(self.network.quantum_inspired_distance(p) > 0.6 for p in padded_patterns)
+        return recognized / len(padded_patterns) if padded_patterns else 0
+    def evaluate_signal_reliability(self, prediction_log):
+        signals = [{'buy': p['Buy'], 'sell': p['Sell'], 'predicted': p['Predicted'], 'actual': p['Actual']} for p in prediction_log]
+        consistent = sum((s1['buy'] - s1['predicted']) * (s2['buy'] - s2['predicted']) > 0 for s1, s2 in zip(signals[:-1], signals[1:]))
+        return consistent / len(signals) if signals else 0
 
 # ---------------- Main Streamlit App -------------------
 def main():
-    st.set_page_config(page_title="Dream-Hybrid Trader with Metrics", layout="wide")
-    st.title("🧠🤖 True Self-Learning Dream-Hybrid BTC/USDT Neural Trader with Metrics")
+    st.set_page_config(page_title="Dream-Hybrid Trader", layout="wide")
+    st.title("🧠🤖 True Self-Learning Dream-Hybrid BTC/USDT Neural Trader")
 
     global exchange
     exchange = ccxt.kucoin()
 
+    symbol = 'BTC/USDT'
+    timeframe = '1m'
+    data_limit = 200
+
     agent = SelfLearningTrader()
     agent.load()
+
+    network = HybridNeuralNetwork()
+    metrics = PatternRecognitionMetrics(network)
 
     capital = 1000.0
     position = None
     prediction_log = []
-    prices_history = deque(maxlen=252*7)  # store ~1 week of 1-min returns for Sharpe calc
-    capital_history = deque(maxlen=1000)
-    neuron_counts = deque(maxlen=100)
 
     placeholder = st.empty()
     chart_placeholder = st.empty()
+    error_chart_placeholder = st.empty()
     metrics_placeholder = st.empty()
-    log_placeholder = st.empty()
-    dream_placeholder = st.empty()
-    rules_placeholder = st.empty()
-    growth_placeholder = st.empty()
 
     while True:
-        df = get_kucoin_data()
-        latest = df.iloc[-1:]
-        features = ['close', 'RSI', 'MA20']
+        df = get_kucoin_data(symbol, timeframe, data_limit)
+        features = ['close', 'RSI', 'MA20', 'ATR']
 
         imputer = SimpleImputer(strategy='mean')
         scaler = MinMaxScaler()
-        data_scaled = scaler.fit_transform(imputer.fit_transform(df[features]))
-        state = data_scaled[-5:].flatten()
+        data_imputed = imputer.fit_transform(df[features])
+        data_scaled = scaler.fit_transform(data_imputed)
 
-        neuron, action = agent.act(state)
-        current_price = latest['close'].values[0]
-        prices_history.append(current_price)
+        smoothing_factor = 0.3 if df['ATR'].iloc[-1] > df['close'].std() * 0.01 else 0.7
+        input_window = data_scaled[-5:].flatten()
 
+        # Use both agents:
+        neuron, action = agent.act(input_window)
+        current_price = df['close'].iloc[-1]
+
+        # Reinforcement from SelfLearningTrader
         reward = 0
         if action == 'buy' and position is None:
             position = current_price
-            trade_action = 'BUY'
-            trade_price = current_price
         elif action == 'sell' and position is not None:
             reward = current_price - position
             capital += reward
             position = None
-            trade_action = 'SELL'
-            trade_price = current_price
-        else:
-            trade_action = 'HOLD'
-            trade_price = current_price
-            if position is not None:
-                reward = (current_price - position) * 0.01
+        elif action == 'hold' and position is not None:
+            reward = (current_price - position) * 0.01
 
-        agent.learn(state, action, reward)
+        agent.learn(input_window, action, reward)
         agent.save()
 
-        capital_history.append(capital)
-        neuron_counts.append(len(agent.neurons))
+        # Hybrid Network prediction
+        predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
+        reconstructed = np.copy(data_scaled[-1])
+        reconstructed[0] = predicted_scaled[0]
+        predicted_close = scaler.inverse_transform([reconstructed])[0][0]
 
-        # Log trades for display
-        if trade_action in ['BUY', 'SELL']:
-            prediction_log.append({
-                'Timestamp': datetime.now(),
-                'Action': trade_action,
-                'Price': trade_price,
-                'Capital': capital,
-                'Reward': reward
-            })
+        buy_price, sell_price = predicted_close, predicted_close
+        if network.units:
+            n_features = data_scaled.shape[1]
+            padded_positions = np.array([
+                np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant')
+                for unit in network.units
+            ])
+            closes = scaler.inverse_transform(padded_positions)[:, 0]
+            buy_price = closes.min()
+            sell_price = closes.max()
 
-        # Calculate returns for Sharpe ratio (log returns)
-        returns = np.diff(np.log(np.array(prices_history))) if len(prices_history) > 1 else np.array([0])
-        sharpe = sharpe_ratio(returns)
-        drawdown = max_drawdown(np.array(prices_history))
+        uncertainty = network.estimate_uncertainty(similarity)
+        ci = uncertainty * current_price
 
-        # UI Output
+        prediction_log.append({
+            'Time': df.index[-1].strftime("%H:%M:%S"),
+            'Predicted': predicted_close,
+            'Actual': current_price,
+            'Buy': buy_price,
+            'Sell': sell_price,
+            'Error': abs(current_price - predicted_close),
+            'Action': action,
+            'Reward': reward,
+            'Position': position
+        })
+
+        # Calculate Sharpe ratio (simplified, use returns from reward)
+        returns = [p['Reward'] for p in prediction_log if p['Reward'] != 0]
+        if len(returns) > 1:
+            sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-9) * np.sqrt(len(returns))
+        else:
+            sharpe_ratio = 0
+
+        # Drawdown calculation
+        equity_curve = np.cumsum(returns) + capital
+        peak = np.maximum.accumulate(equity_curve)
+        drawdowns = (peak - equity_curve) / peak
+        max_drawdown = drawdowns.max() if len(drawdowns) > 0 else 0
+
+        pattern_rate = metrics.verify_pattern_learning(df)
+        signal_score = metrics.evaluate_signal_reliability(prediction_log)
+
         with placeholder.container():
-            st.metric("Current Close Price", f"{current_price:.2f} USDT")
-            st.metric("Capital", f"{capital:.2f} USDT")
-            st.metric("Last Action", trade_action)
-            st.metric("Last Reward", f"{reward:.4f}")
-            st.metric("Sharpe Ratio (est.)", f"{sharpe:.2f}")
-            st.metric("Max Drawdown", f"{drawdown:.2%}")
-            st.metric("Total Learned Neurons", len(agent.neurons))
+            st.markdown(f"### Last Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            col1, col2, col3, col4, col5, col6 = st.columns(6)
+            col1.metric("Current Close", f"{current_price:.2f}")
+            col2.metric("Predicted Close", f"{predicted_close:.2f}")
+            col3.metric("Buy at Dip", f"{buy_price:.2f}")
+            col4.metric("Sell at Peak", f"{sell_price:.2f}")
+            col5.metric("Sharpe Ratio", f"{sharpe_ratio:.2f}")
+            col6.metric("Max Drawdown", f"{max_drawdown:.2%}")
 
-        with log_placeholder.container():
-            st.subheader("📜 Trading Log")
-            if prediction_log:
-                log_df = pd.DataFrame(prediction_log)
-                log_df.index = log_df['Timestamp'].dt.strftime("%Y-%m-%d %H:%M:%S")
-                st.dataframe(log_df[['Timestamp', 'Action', 'Price', 'Capital', 'Reward']].sort_index(ascending=False))
-            else:
-                st.write("No trades executed yet.")
+        log_df = pd.DataFrame(prediction_log[-50:])
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(log_df['Time'], log_df['Actual'], label='Actual', color='blue', marker='o')
+        ax.plot(log_df['Time'], log_df['Predicted'], label='Predicted', color='orange', marker='x')
+        ax.fill_between(log_df['Time'], log_df['Predicted'] - ci, log_df['Predicted'] + ci, alpha=0.2, color='orange')
 
-        with chart_placeholder.container():
-            st.subheader("📈 Price & Trades Chart")
-            fig, ax = plt.subplots(figsize=(12, 5))
-            ax.plot(list(prices_history), label='Close Price')
-            buys = [log['Price'] for log in prediction_log if log['Action'] == 'BUY']
-            buys_idx = [i for i, log in enumerate(prediction_log) if log['Action'] == 'BUY']
-            sells = [log['Price'] for log in prediction_log if log['Action'] == 'SELL']
-            sells_idx = [i for i, log in enumerate(prediction_log) if log['Action'] == 'SELL']
-            ax.scatter(buys_idx, buys, marker='^', color='green', label='Buy', s=100)
-            ax.scatter(sells_idx, sells, marker='v', color='red', label='Sell', s=100)
-            ax.set_title("Price and Trade Actions Over Time")
-            ax.legend()
-            st.pyplot(fig)
-            plt.close(fig)
+        y_min = min(log_df['Actual'].min(), log_df['Predicted'].min())
+        y_max = max(log_df['Actual'].max(), log_df['Predicted'].max())
+        y_min_adjusted = 1000 * (y_min // 1000)
+        y_max_adjusted = 1000 * ((y_max // 1000) + 1)
+        ax.set_ylim(y_min_adjusted, y_max_adjusted)
 
-        with dream_placeholder.container():
-            st.subheader("🌙 Dreams Visualization (Episodic Memory Snapshot)")
-            # Show a simplified visualization of random neurons states as "dreams"
-            dream_samples = np.array([n.state for n in agent.neurons[-10:]])
-            if len(dream_samples) > 0:
-                fig, ax = plt.subplots(figsize=(10, 3))
-                ax.imshow(dream_samples, aspect='auto', cmap='plasma')
-                ax.set_title("Neuron States Over Recent Dreams")
-                ax.set_xlabel("State Feature Index")
-                ax.set_ylabel("Neuron Index")
-                st.pyplot(fig)
-                plt.close(fig)
-            else:
-                st.write("No dreams recorded yet.")
+        ax.legend()
+        ax.set_title("Actual vs Predicted Close")
+        plt.xticks(rotation=45)
+        chart_placeholder.pyplot(fig)
+        plt.close(fig)
 
-        with rules_placeholder.container():
-            st.subheader("📚 Current Learned Trading Rules Summary")
-            rules_summary = extract_trading_rules(agent.neurons)
-            st.text(rules_summary)
+        fig2, ax2 = plt.subplots(figsize=(10, 2.5))
+        ax2.plot(log_df['Time'], log_df['Error'], color='red', marker='.')
+        ax2.set_title("Prediction Error Over Time")
+        plt.xticks(rotation=45)
+        error_chart_placeholder.pyplot(fig2)
+        plt.close(fig2)
 
-        with growth_placeholder.container():
-            st.subheader("📊 Neural Growth Over Time")
-            fig, ax = plt.subplots(figsize=(8, 3))
-            ax.plot(list(neuron_counts), label='Neuron Count')
-            ax.set_title("Growth of Learned Neurons")
-            ax.set_xlabel("Time (iterations)")
-            ax.set_ylabel("Number of Neurons")
-            ax.legend()
-            st.pyplot(fig)
-            plt.close(fig)
+        with metrics_placeholder.container():
+            st.markdown("### System Performance Metrics")
+            mcol1, mcol2, mcol3 = st.columns(3)
+            mcol1.metric("Pattern Recognition Rate", f"{pattern_rate:.2%}")
+            mcol2.metric("Signal Consistency Score", f"{signal_score:.2%}")
+            mcol3.metric("Open Positions", str(position if position else "None"))
 
         time.sleep(60)
 
