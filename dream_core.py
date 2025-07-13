@@ -1,4 +1,4 @@
-# ---------------- dream_core.py ----------------
+# ---------------- dream_core.py (Enhanced) ----------------
 import numpy as np
 import pandas as pd
 import ccxt
@@ -120,6 +120,9 @@ class EpisodicMemory:
         self.episodes[self.current_episode]['patterns'].append(pattern)
         self.episodes[self.current_episode]['emotional_tags'].append(emotional_tag)
 
+    def count_patterns(self):
+        return sum(len(ep['patterns']) for ep in self.episodes.values())
+
 class WorkingMemory:
     def __init__(self, capacity=20):
         self.capacity = capacity
@@ -212,6 +215,13 @@ class HybridNeuralNetwork:
             return 0.0
         similarities = [unit.quantum_inspired_distance(pattern) for unit in self.units]
         return max(similarities)
+
+    def neural_growth_stats(self):
+        return {
+            "total_units": len(self.units),
+            "total_episodes": len(self.episodic_memory.episodes),
+            "total_patterns": self.episodic_memory.count_patterns()
+        }
 
 # ---------------- Technical Indicators -------------------
 def calculate_rsi(prices, period=14):
