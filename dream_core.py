@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import ccxt
 from datetime import datetime
+import pickle
+import os
 
 # ---------------- Reinforcement Unit -------------------
 class SelfLearningNeuron:
@@ -52,6 +54,17 @@ class SelfLearningTrader:
             self.memory[-2]["action_values"][action] += reward * 0.1
 
         self.epsilon = max(0.05, self.epsilon * 0.995)
+
+    def save(self, filename="agent_state.pkl"):
+        with open(filename, "wb") as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def load(filename="agent_state.pkl"):
+        if os.path.exists(filename):
+            with open(filename, "rb") as f:
+                return pickle.load(f)
+        return SelfLearningTrader()
 
 # ---------------- Neural Units -------------------
 class HybridNeuralUnit:
