@@ -1,9 +1,12 @@
-# ---------------- Unified Dream-Hybrid Neural Trading System (Enhanced) -------------------
+# ---------------- Unified Dream-Hybrid Neural Trading System (Complete Single Script) -------------------
 import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import ccxt, time, dill as pickle, os
+import ccxt
+import time
+import dill as pickle
+import os
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.impute import SimpleImputer
 from datetime import datetime
@@ -38,46 +41,70 @@ class SelfLearningTrader:
         self.capital_history = []
 
     def act(self, state):
+        # Exploration or if no neurons yet
         if not self.neurons or np.random.rand() < self.epsilon:
             neuron = SelfLearningNeuron(len(state))
             neuron.state = state
             self.neurons.append(neuron)
             return neuron, np.random.choice(['buy', 'sell', 'hold'])
 
+        # Exploitation: pick neuron with highest activation
         scores = [(n, n.activate(state)) for n in self.neurons]
         best_neuron = max(scores, key=lambda x: x[1])[0]
-        return best_neuron, max(self.memory[-1]["action_values"], key=self.memory[-1]["action_values"].get) if self.memory else 'hold'
+        # Choose best action from last memory's action values, else hold
+        if self.memory:
+            last_action_vals = self.memory[-1]["action_values"]
+            action = max(last_action_vals, key=last_action_vals.get)
+        else:
+            action = 'hold'
+        return best_neuron, action
 
     def learn(self, state, action, reward):
         neuron = SelfLearningNeuron(len(state))
         neuron.state = state
         neuron.reinforce(reward)
         self.neurons.append(neuron)
+
         self.memory.append({"state": state, "action": action, "reward": reward, "action_values": {'buy': 0, 'sell': 0, 'hold': 0}})
         if len(self.memory) >= 2:
             self.memory[-2]["action_values"][action] += reward * 0.1
+
         self.epsilon = max(0.05, self.epsilon * 0.995)
 
     def save(self):
         with open("agent_state.pkl", "wb") as f:
-            pickle.dump((self.neurons, self.memory), f)
+            pickle.dump((self.neurons, self.memory, self.epsilon, self.capital_history, self.drawdowns), f)
 
     def load(self):
         if os.path.exists("agent_state.pkl"):
             with open("agent_state.pkl", "rb") as f:
-                self.neurons, self.memory = pickle.load(f)
+                self.neurons, self.memory, self.epsilon, self.capital_history, self.drawdowns = pickle.load(f)
+        else:
+            # Initialize missing attributes if new
+            self.epsilon = 1.0
+            self.capital_history = []
+            self.drawdowns = []
 
     def compute_metrics(self, capital):
         self.capital_history.append(capital)
         if len(self.capital_history) > 1:
-            drawdown = max(self.capital_history) - capital
+            max_capital = max(self.capital_history)
+            drawdown = max_capital - capital
             self.drawdowns.append(drawdown)
-            return drawdown, np.std(self.capital_history), np.mean(self.capital_history)
+            volatility = np.std(self.capital_history)
+            avg_capital = np.mean(self.capital_history)
+            return drawdown, volatility, avg_capital
         return 0, 0, capital
 
     def learned_rules(self):
+        # Top 5 most used neurons as 'rules'
         usage_sorted = sorted(self.neurons, key=lambda x: x.usage, reverse=True)[:5]
-        return [f"Neuron {i+1}: Usage={n.usage}, Reward={n.reward:.2f}" for i, n in enumerate(usage_sorted)]
+        rules = []
+        for i, neuron in enumerate(usage_sorted):
+            rules.append(f"Neuron {i+1}: Usage={neuron.usage}, Reward={neuron.reward:.2f}")
+        if not rules:
+            rules = ["No learned rules yet."]
+        return rules
 
 # ---------------- Indicators & Data -------------------
 def calculate_rsi(prices, period=14):
@@ -87,7 +114,8 @@ def calculate_rsi(prices, period=14):
     avg_gain = gain.rolling(window=period).mean()
     avg_loss = loss.rolling(window=period).mean()
     rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 def get_kucoin_data(symbol='BTC/USDT', timeframe='1m'):
     bars = exchange.fetch_ohlcv(symbol, timeframe, limit=200)
@@ -145,6 +173,7 @@ def main():
         elif action == 'hold' and position is not None:
             unrealized = current_price - position
             reward = unrealized * 0.01
+            # Stop loss at 1% loss
             if unrealized < -0.01 * position:
                 reward = unrealized
                 capital += reward
@@ -163,7 +192,7 @@ def main():
             'Reward': reward,
             'Capital': capital,
             'Drawdown': drawdown,
-            'StopLoss': stop_loss_triggered
+            'StopLossTriggered': stop_loss_triggered
         })
 
         df_log = pd.DataFrame(prediction_log[-100:])
@@ -179,18 +208,21 @@ def main():
         with chart_placeholder.container():
             st.subheader("📊 Price & Trading Actions")
             fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(df_log['Time'], df_log['Price'], label='Price')
+            ax.plot(df_log['Time'], df_log['Price'], label='Price', marker='.')
             buy_times = df_log[df_log['Action'] == 'buy']['Time']
             sell_times = df_log[df_log['Action'] == 'sell']['Time']
-            ax.scatter(buy_times, df_log[df_log['Action'] == 'buy']['Price'], color='green', label='Buy')
-            ax.scatter(sell_times, df_log[df_log['Action'] == 'sell']['Price'], color='red', label='Sell')
+            ax.scatter(buy_times, df_log[df_log['Action'] == 'buy']['Price'], color='green', label='Buy', marker='^', s=80)
+            ax.scatter(sell_times, df_log[df_log['Action'] == 'sell']['Price'], color='red', label='Sell', marker='v', s=80)
             ax.legend()
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Price")
+            plt.xticks(rotation=45)
             st.pyplot(fig)
             plt.close(fig)
 
         with log_placeholder.container():
-            st.subheader("📅 Trading Log")
-            st.dataframe(df_log[::-1])
+            st.subheader("📅 Trading Log (Most Recent 100 Actions)")
+            st.dataframe(df_log[::-1].reset_index(drop=True))
 
         with rule_placeholder.container():
             st.subheader("🧠 Learned Rules Summary")
@@ -198,10 +230,12 @@ def main():
                 st.write(rule)
 
         with dream_placeholder.container():
-            st.subheader("💭 Dream Visualization (Neural Activations)")
-            fig, ax = plt.subplots(figsize=(6, 2))
+            st.subheader("💭 Dream Visualization (Recent Neuron Usage)")
+            fig, ax = plt.subplots(figsize=(8, 2))
             activations = [n.usage for n in agent.neurons[-20:]]
             ax.bar(range(len(activations)), activations, color='purple')
+            ax.set_xlabel("Neuron Index")
+            ax.set_ylabel("Usage Count")
             ax.set_title("Recent Neuron Usage (Growth Visualization)")
             st.pyplot(fig)
             plt.close(fig)
@@ -210,3 +244,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
