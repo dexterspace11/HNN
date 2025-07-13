@@ -1,6 +1,7 @@
 # ---------------- dream_core.py ----------------
 import numpy as np
 import pandas as pd
+import ccxt
 from datetime import datetime
 
 # ---------------- Reinforcement Unit -------------------
@@ -23,7 +24,6 @@ class SelfLearningNeuron:
         self.reward += reward
         self.value += reward * 0.1
 
-# ---------------- Agent -------------------
 class SelfLearningTrader:
     def __init__(self):
         self.neurons = []
@@ -53,18 +53,6 @@ class SelfLearningTrader:
 
         self.epsilon = max(0.05, self.epsilon * 0.995)
 
-    def save(self):
-        import pickle
-        with open("agent_state.pkl", "wb") as f:
-            pickle.dump((self.neurons, self.memory), f)
-
-    def load(self):
-        import pickle, os
-        if os.path.exists("agent_state.pkl"):
-            with open("agent_state.pkl", "rb") as f:
-                self.neurons, self.memory = pickle.load(f)
-
-# ---------------- Hybrid Neural Unit -------------------
 class HybridNeuralUnit:
     def __init__(self, position, learning_rate=0.1):
         self.position = position
@@ -102,7 +90,6 @@ class HybridNeuralUnit:
     def activate(self, input_state):
         return self.get_attention_score(input_state)
 
-# ---------------- Memory Structures -------------------
 class EpisodicMemory:
     def __init__(self):
         self.episodes = {}
@@ -139,7 +126,6 @@ class SemanticMemory:
         key = tuple(sorted([str(p) for p in [pattern1, pattern2]]))
         self.pattern_relationships[key] = strength
 
-# ---------------- Hybrid Network -------------------
 class HybridNeuralNetwork:
     def __init__(self):
         self.units = []
@@ -211,21 +197,28 @@ class HybridNeuralNetwork:
         similarities = [unit.quantum_inspired_distance(pattern) for unit in self.units]
         return max(similarities)
 
-# ---------------- Pattern Recognition Metrics -------------------
-class PatternRecognitionMetrics:
-    def __init__(self, network):
-        self.network = network
+# ---------------- Technical Indicators -------------------
+def calculate_rsi(prices, period=14):
+    delta = prices.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
-    def verify_pattern_learning(self, test_data):
-        patterns = [test_data[['close', 'RSI', 'MA20', 'ATR']].iloc[i].values for i in range(len(test_data) - 1)]
-        padded_patterns = [
-            np.pad(p, (0, 20 - len(p)), mode='constant') if len(p) < 20 else p
-            for p in patterns
-        ]
-        recognized = sum(self.network.quantum_inspired_distance(p) > 0.6 for p in padded_patterns)
-        return recognized / len(padded_patterns) if padded_patterns else 0
+def calculate_atr(high, low, close, period=14):
+    tr = np.maximum(high - low, np.maximum(abs(high - close.shift(1)), abs(low - close.shift(1))))
+    return pd.Series(tr).rolling(window=period).mean()
 
-    def evaluate_signal_reliability(self, prediction_log):
-        signals = [{'buy': p['Buy'], 'sell': p['Sell'], 'predicted': p['Predicted'], 'actual': p['Actual']} for p in prediction_log]
-        consistent = sum((s1['buy'] - s1['predicted']) * (s2['buy'] - s2['predicted']) > 0 for s1, s2 in zip(signals[:-1], signals[1:]))
-        return consistent / len(signals) if signals else 0
+def get_kucoin_data(symbol='BTC/USDT', timeframe='1m', limit=200):
+    exchange = ccxt.kucoin()
+    bars = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+    df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    df.set_index('timestamp', inplace=True)
+    df['RSI'] = calculate_rsi(df['close'])
+    df['MA20'] = df['close'].rolling(window=20).mean()
+    df['ATR'] = calculate_atr(df['high'], df['low'], df['close'])
+    df.dropna(inplace=True)
+    return df
