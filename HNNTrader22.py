@@ -268,9 +268,20 @@ class HybridNeuralNetwork:
         return max(similarities)
 
 # ---------------- Main Streamlit App -------------------
+from streamlit_autorefresh import st_autorefresh
+
 def main():
+    # Initialize Streamlit session state variables
+    if 'capital' not in st.session_state:
+        st.session_state.capital = 1000.0
+    if 'position' not in st.session_state:
+        st.session_state.position = None
+    if 'prediction_log' not in st.session_state:
+        st.session_state.prediction_log = []
     st.set_page_config(page_title="Dream-Hybrid Trader", layout="wide")
     st.title("🧠🤖 True Self-Learning Dream-Hybrid BTC/USDT Neural Trader")
+
+    st_autorefresh(interval=60000, key="data_refresh")  # Refresh every 60 seconds
 
     global exchange
     exchange = ccxt.kucoin()
@@ -285,9 +296,7 @@ def main():
     network = HybridNeuralNetwork()
     metrics = PatternRecognitionMetrics(network)
 
-    capital = 1000.0
-    position = None
-    prediction_log = []
+    # (moved to session_state above)
 
     placeholder = st.empty()
     chart_placeholder = st.empty()
@@ -298,68 +307,63 @@ def main():
     trade_log_placeholder = st.empty()
     dream_placeholder = st.empty()
 
-    while True:
-        df = get_kucoin_data(symbol, timeframe, data_limit)
-        features = ['close', 'RSI', 'MA20', 'ATR']
+    df = get_kucoin_data(symbol, timeframe, data_limit)
+    features = ['close', 'RSI', 'MA20', 'ATR']
 
-        imputer = SimpleImputer(strategy='mean')
-        scaler = MinMaxScaler()
-        data_imputed = imputer.fit_transform(df[features])
-        data_scaled = scaler.fit_transform(data_imputed)
+    imputer = SimpleImputer(strategy='mean')
+    scaler = MinMaxScaler()
+    data_imputed = imputer.fit_transform(df[features])
+    data_scaled = scaler.fit_transform(data_imputed)
 
-        smoothing_factor = 0.3 if df['ATR'].iloc[-1] > df['close'].std() * 0.01 else 0.7
-        input_window = data_scaled[-5:].flatten()
+    smoothing_factor = 0.3 if df['ATR'].iloc[-1] > df['close'].std() * 0.01 else 0.7
+    input_window = data_scaled[-5:].flatten()
 
-        neuron, action = agent.act(input_window)
-        current_price = df['close'].iloc[-1]
+    neuron, action = agent.act(input_window)
+    current_price = df['close'].iloc[-1]
 
-        reward = 0
-        if action == 'buy' and position is None:
-            position = current_price
-        elif action == 'sell' and position is not None:
-            reward = current_price - position
-            capital += reward
-            position = None
-        elif action == 'hold' and position is not None:
-            reward = (current_price - position) * 0.01
+    reward = 0
+    if action == 'buy' and position is None:
+        st.session_state.position = current_price
+    elif action == 'sell' and position is not None:
+        reward = current_price - position
+        st.session_state.capital += reward
+        st.session_state.position = None
+    elif action == 'hold' and position is not None:
+        reward = (current_price - position) * 0.01
 
-        agent.learn(input_window, action, reward)
-        agent.save()
+    agent.learn(input_window, action, reward)
+    agent.save()
 
-        predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
-        reconstructed = np.copy(data_scaled[-1])
-        reconstructed[0] = predicted_scaled[0]
-        predicted_close = scaler.inverse_transform([reconstructed])[0][0]
+    predicted_scaled, similarity = network.predict_next(input_window, smoothing_factor)
+    reconstructed = np.copy(data_scaled[-1])
+    reconstructed[0] = predicted_scaled[0]
+    predicted_close = scaler.inverse_transform([reconstructed])[0][0]
 
-        buy_price, sell_price = predicted_close, predicted_close
-        if network.units:
-            n_features = data_scaled.shape[1]
-            padded_positions = np.array([
-                np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant')
-                for unit in network.units
-            ])
-            closes = scaler.inverse_transform(padded_positions)[:, 0]
-            buy_price = closes.min()
-            sell_price = closes.max()
+    buy_price, sell_price = predicted_close, predicted_close
+    if network.units:
+        n_features = data_scaled.shape[1]
+        padded_positions = np.array([
+            np.pad(unit.position[:n_features], (0, max(0, n_features - len(unit.position[:n_features]))), mode='constant')
+            for unit in network.units
+        ])
+        closes = scaler.inverse_transform(padded_positions)[:, 0]
+        buy_price = closes.min()
+        sell_price = closes.max()
 
-        uncertainty = network.estimate_uncertainty(similarity)
-        ci = uncertainty * current_price
+    uncertainty = network.estimate_uncertainty(similarity)
+    ci = uncertainty * current_price
 
-        prediction_log.append({
-            'Time': df.index[-1].strftime("%Y-%m-%d %H:%M:%S"),
-            'Predicted': predicted_close,
-            'Actual': current_price,
-            'Buy': buy_price,
-            'Sell': sell_price,
-            'Error': abs(current_price - predicted_close),
-            'Action': action,
-            'Reward': reward,
-            'Position': position if position else "None"
-        })
-
-        st.write("Streamlit update logic here (visuals, logs, metrics)")
-
-        time.sleep(60)
+    st.session_state.prediction_log.append({
+        'Time': df.index[-1].strftime("%Y-%m-%d %H:%M:%S"),
+        'Predicted': predicted_close,
+        'Actual': current_price,
+        'Buy': buy_price,
+        'Sell': sell_price,
+        'Error': abs(current_price - predicted_close),
+        'Action': action,
+        'Reward': reward,
+        'Position': st.session_state.position if st.session_state.position else "None"
+    })
 
 if __name__ == "__main__":
     main()
